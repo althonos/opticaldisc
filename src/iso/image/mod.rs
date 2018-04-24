@@ -80,7 +80,7 @@ where
             use std::path::Component;
             record = match component {
                 Component::Normal(s) => record
-                    .children(self)
+                    .children(self)?
                     .find(|r| s == r.name.as_str())
                     .ok_or(Error::from_kind(ErrorKind::NotFound(_path.to_path_buf())))?,
                 Component::RootDir => record,
@@ -91,13 +91,23 @@ where
         Ok(record)
     }
 
-    pub fn listdir<P>(&mut self, path: P) -> Result<Vec<Record>>
+    pub fn list_records<P>(&mut self, path: P) -> Result<Vec<Record>>
     where
         P: AsRef<::std::path::Path>,
     {
         let record = self.get_record(path)?;
-        Ok(record.children(self).collect())
+        Ok(record.children(self)?.collect())
     }
+
+    pub fn listdir<P>(&mut self, path: P) -> Result<Vec<String>>
+    where
+        P: AsRef<::std::path::Path>,
+    {
+        let record = self.get_record(path)?;
+        println!("{:?}", record);
+        Ok(record.children(self)?.map(|r| r.name).collect())
+    }
+
 }
 
 impl IsoImage<::std::fs::File> {

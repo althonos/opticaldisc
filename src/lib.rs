@@ -1,4 +1,4 @@
-// #![feature(try_from)]
+#![feature(slice_patterns)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
 

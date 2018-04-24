@@ -1,7 +1,8 @@
 pub mod parser;
 mod children;
 
-use datetime::Datetime;
+use ::datetime::Datetime;
+use ::error::{Error, ErrorKind, Result};
 
 use super::image::IsoImage;
 use self::children::Children;
@@ -14,17 +15,36 @@ pub struct Record {
     pub extent_length: u8,
     pub data_length: u32,
     pub seq_number: u16,
+
+    version: Option<u8>,
+    _dir: bool,
+    _hidden: bool,
+
+
 }
 
 impl Record {
+
     pub fn parse(input: &[u8]) -> ::error::Result<Self> {
         Ok(parser::record(input)?.1)
     }
 
-    pub fn children<'a, H: 'a>(&'a self, image: &'a mut IsoImage<H>) -> Children<'a, H>
+    pub fn is_dir(&self) -> bool {
+        self._dir
+    }
+
+    pub fn is_file(&self) -> bool {
+        !self._dir
+    }
+
+    pub fn children<'a, H: 'a>(&'a self, image: &'a mut IsoImage<H>) -> Result<Children<'a, H>>
     where
         H: ::std::io::Seek + ::std::io::Read,
     {
-        Children::new(self, image)
+        if self.is_dir() {
+            Ok(Children::new(self, image))
+        } else {
+            Err(Error::from_kind(ErrorKind::DirectoryExpected))
+        }
     }
 }

@@ -9,7 +9,7 @@ where
     image: &'a mut IsoImage<H>,
     offset: usize,
     block: u32,
-    buffer: [u8; 2048],
+    buffer: Vec<u8>,
     finished: bool,
 }
 
@@ -23,7 +23,7 @@ where
             image,
             block: parent.extent,
             offset: 0,
-            buffer: [0; 2048],
+            buffer: vec![0; 2048],
             finished: false,
         }
     }

@@ -28,6 +28,47 @@ pub fn datetime(input: &[u8]) -> ::nom::IResult<&[u8], Datetime> {
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
+pub fn filename(input: &[u8], is_dir: bool) -> Result<(&str, Option<u8>), ::std::str::Utf8Error> {
+
+    let size = input.len();
+
+    let (name, version) = if size < 3 || is_dir {
+        (input, None)
+    } else {
+        match &input[size-3..] {
+            &[b'.', b';', v] => (&input[..size-3], Some(v)),
+            &[  _,  b';', v] => (&input[..size-2], Some(v)),
+            &[  _,    _,  _] => ( input,       None),
+                           _ => unreachable!()
+        }
+    };
+    Ok((::std::str::from_utf8(name)?, version))
+}
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
+    bits!(
+        do_parse!(
+            extend: take_bits!(u8, 1)   >>
+                    take_bits!(u8, 2)   >>
+            perms:  take_bits!(u8, 1)   >>
+            info:   take_bits!(u8, 1)   >>
+            assoc:  take_bits!(u8, 1)   >>
+            isdir:  take_bits!(u8, 1)   >>
+            hidden: take_bits!(u8, 1)   >>
+                    (
+                        hidden == 1,
+                         isdir == 1,
+                         assoc == 1,
+                          info == 1,
+                         perms == 1,
+                        extend == 1
+                    )
+        )
+    )
+);
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
 pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
     use ::nom::be_u8;
     let (_, length) = peek!(input, be_u8)?;
@@ -38,19 +79,22 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
         extent:         both_u32                                                     >>
         data_length:    both_u32                                                     >>
         date:           datetime                                                     >>
-        flags:          take!(1)                                                     >>
+        flags:          record_flags                                                 >>
         unit_size:      be_u8                                                        >>
         gap_size:       be_u8                                                        >>
         seq_number:     both_u16                                                     >>
         id_length:      be_u8                                                        >>
-        id:             map_res!(take!(id_length), ::std::str::from_utf8) >>
+        versioned_id:   map_res!(take!(id_length), |id| filename(id, flags.1))        >>
                         (Record {
-                            name: id.to_owned(),
+                            name: versioned_id.0.to_owned(),
+                            version: versioned_id.1,
                             date,
                             extent,
                             extent_length,
                             data_length,
                             seq_number,
+                            _hidden: flags.0,
+                            _dir: flags.1
                         })
     ).map(|(_, r)| (rem, r))
 }

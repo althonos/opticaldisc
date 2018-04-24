@@ -3,13 +3,18 @@ error_chain!{
         Io(::std::io::Error);
     }
     errors {
+        // DirectoryExpected(path: ::std::path::PathBuf) {
+        DirectoryExpected {
+            description("directory expected")
+            display("directory expected")
+        }
         NoPrimaryVolumeDescriptor {
             description("no primary volume descriptor found")
             display("no primary volume descriptor found")
         }
         NotFound(path: ::std::path::PathBuf) {
             description("path not found")
-            display("path not found: '{}'", path.to_str().unwrap_or(""))
+            display("path not found: '{}'", path.to_string_lossy())
         }
         NoSetTerminator {
             description("missing set terminator")
