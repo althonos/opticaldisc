@@ -1,0 +1,14 @@
+[package]
+name = "opticaldisc"
+version = "0.1.0"
+authors = ["Martin Larralde <martin.larralde@ens-cachan.fr>"]
+
+[dependencies]
+nom = "4.0.0-beta3"
+btoi = "^0.3.0"
+fixedvec = "^0.2.3"
+error-chain = { version = "^0.11.0", default-features = false }
+
+# [features]
+# std = ["nom/std", "btoi/std"]
+# default = ["std"]
