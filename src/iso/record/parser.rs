@@ -75,7 +75,7 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
     let (rem, buf) = take!(input, length)?;
     do_parse!(buf,
         length:         be_u8                                                        >>
-        extent_length:  be_u8                                                        >>
+        ear_length:     be_u8                                                        >>
         extent:         both_u32                                                     >>
         data_length:    both_u32                                                     >>
         date:           datetime                                                     >>
@@ -90,7 +90,7 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
                             version: versioned_id.1,
                             date,
                             extent,
-                            extent_length,
+                            ear_length,
                             data_length,
                             seq_number,
                             _hidden: flags.0,

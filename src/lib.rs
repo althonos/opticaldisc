@@ -6,8 +6,6 @@ extern crate btoi;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
-extern crate fixedvec;
-#[macro_use]
 extern crate nom;
 
 #[macro_use]

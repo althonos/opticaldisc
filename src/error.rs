@@ -8,6 +8,10 @@ error_chain!{
             description("directory expected")
             display("directory expected")
         }
+        FileExpected {
+            description("file expected")
+            display("file expected")
+        }
         NoPrimaryVolumeDescriptor {
             description("no primary volume descriptor found")
             display("no primary volume descriptor found")

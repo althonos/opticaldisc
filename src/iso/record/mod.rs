@@ -1,10 +1,10 @@
 pub mod parser;
 mod children;
 
-use ::datetime::Datetime;
-use ::error::{Error, ErrorKind, Result};
+use datetime::Datetime;
+use error::{Error, ErrorKind, Result};
 
-use super::image::IsoImage;
+use super::IsoImage;
 use self::children::Children;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,19 +12,16 @@ pub struct Record {
     pub date: Datetime,
     pub name: String,
     pub extent: u32,
-    pub extent_length: u8,
+    pub ear_length: u8,
     pub data_length: u32,
     pub seq_number: u16,
 
     version: Option<u8>,
     _dir: bool,
     _hidden: bool,
-
-
 }
 
 impl Record {
-
     pub fn parse(input: &[u8]) -> ::error::Result<Self> {
         Ok(parser::record(input)?.1)
     }
