@@ -1,12 +1,17 @@
-use utils::parsers::{both_u16, both_u32};
-use datetime::Datetime;
+use chrono::DateTime;
+use chrono::TimeZone;
+use chrono::offset::FixedOffset;
+
+use nom::be_u8;
+
+use utils::parsers::both_u16;
+use utils::parsers::both_u32;
 
 use super::Record;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-pub fn datetime(input: &[u8]) -> ::nom::IResult<&[u8], Datetime> {
-    use ::nom::be_u8;
-    do_parse!(input,
+named!(datetime(&[u8]) -> DateTime<FixedOffset>,
+    do_parse!(
         year:  be_u8 >>
         month: be_u8 >>
         day:   be_u8 >>
@@ -14,24 +19,16 @@ pub fn datetime(input: &[u8]) -> ::nom::IResult<&[u8], Datetime> {
         min:   be_u8 >>
         sec:   be_u8 >>
         tz:    be_u8 >>
-               (Datetime {
-                    year: (year as u16) + 1900 ,
-                    month,
-                    day,
-                    hour,
-                    minute: min,
-                    second: sec,
-                    hundredth: 0,
-                    tz
-                })
+               (FixedOffset::east((tz as i32 - 48) * 900)
+                   .ymd(year as i32 + 1900, month as u32, day as u32)
+                   .and_hms(hour as u32, min as u32, sec as u32)
+               )
     )
-}
+);
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub fn filename(input: &[u8], is_dir: bool) -> Result<(&str, Option<u8>), ::std::str::Utf8Error> {
-
     let size = input.len();
-
     let (name, version) = if size < 3 || is_dir {
         (input, None)
     } else {
@@ -70,7 +67,6 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
-    use ::nom::be_u8;
     let (_, length) = peek!(input, be_u8)?;
     let (rem, buf) = take!(input, length)?;
     do_parse!(buf,
@@ -84,7 +80,7 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
         gap_size:       be_u8                                                        >>
         seq_number:     both_u16                                                     >>
         id_length:      be_u8                                                        >>
-        versioned_id:   map_res!(take!(id_length), |id| filename(id, flags.1))        >>
+        versioned_id:   map_res!(take!(id_length), |id| filename(id, flags.1))       >>
                         (Record {
                             name: versioned_id.0.to_owned(),
                             version: versioned_id.1,
@@ -102,6 +98,9 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
 #[cfg(test)]
 mod tests {
 
+    use chrono::Datelike;
+    use chrono::Timelike;
+
     #[test]
     fn test_record() {
         let buf = b"\"\0\x13\0\0\0\0\0\0\x13\0\x08\0\0\0\0\x08\0v\x04\x01\x05\x05\x17\0\x02\0\0\x01\0\0\x01\x01\0";
@@ -115,14 +114,12 @@ mod tests {
     fn test_datetime() {
         let buf = b"\x76\x0B\x0D\x09\x23\x2D\x01";
         let (_, dt) = super::datetime(buf).unwrap();
-        assert_eq!(dt.year, 2018);
-        assert_eq!(dt.month, 11);
-        assert_eq!(dt.day, 13);
-        assert_eq!(dt.hour, 9);
-        assert_eq!(dt.minute, 35);
-        assert_eq!(dt.second, 45);
-        assert_eq!(dt.hundredth, 0);
-        assert_eq!(dt.tz, 1);
+        assert_eq!(dt.year(), 2018);
+        assert_eq!(dt.month(), 11);
+        assert_eq!(dt.day(), 13);
+        assert_eq!(dt.hour(), 9);
+        assert_eq!(dt.minute(), 35);
+        assert_eq!(dt.second(), 45);
     }
 
 }

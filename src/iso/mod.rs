@@ -15,7 +15,6 @@ use self::record::Record;
 /// Volume Descriptor, although they are equal most of the time.
 const SECTOR_SIZE: usize = 2048;
 
-
 /// An ISO-9660 filesystem.
 #[derive(Debug)]
 pub struct IsoImage<H>
@@ -31,7 +30,6 @@ impl<H> IsoImage<H>
 where
     H: ::std::io::Seek + ::std::io::Read,
 {
-
     /// Open an `IsoImage` stored in the given handle.
     pub fn new(mut handle: H) -> Result<Self> {
         let mut block_size = None;

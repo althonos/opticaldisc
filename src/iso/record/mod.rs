@@ -1,15 +1,16 @@
 mod parser;
 mod children;
 
-use datetime::Datetime;
-use error::{Error, ErrorKind, Result};
+use chrono::DateTime;
+use chrono::offset::FixedOffset;
 
+use error::{Error, ErrorKind, Result};
 use super::IsoImage;
 use self::children::Children;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Record {
-    pub date: Datetime,
+    pub date: DateTime<FixedOffset>,
     pub name: String,
     pub extent: u32,
     pub ear_length: u8,

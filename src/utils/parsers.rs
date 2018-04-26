@@ -1,6 +1,6 @@
 /// Parse a null-terminated string from a fixed-length field.
 macro_rules! null_terminated (
-    ($i:expr, $size: expr) => ({
+    ($i: expr, $size: expr) => ({
         take!($i, $size)
             .and_then(|(rem, raw)| take_while!(raw, |x| x != 0).map(|(_, s)| (rem, s)))
     })
@@ -31,6 +31,7 @@ macro_rules! both_endian_impl {
 both_endian_impl!(both_u16, u16, ::nom::le_u16, ::nom::be_u16);
 both_endian_impl!(both_u32, u32, ::nom::le_u32, ::nom::be_u32);
 both_endian_impl!(both_u64, u64, ::nom::le_u64, ::nom::be_u64);
+
 
 #[cfg(test)]
 mod tests {
