@@ -1,17 +1,22 @@
-mod descriptor;
+mod descriptors;
 mod file;
 mod record;
 
-pub use self::record::Record;
 pub use self::file::File;
 
-use std::path::Path;
 use super::error::{Error, ErrorKind, Result};
-use self::descriptor::VolumeDescriptor;
-use self::descriptor::PrimaryVolumeDescriptor;
+use self::descriptors::VolumeDescriptor;
+use self::descriptors::PrimaryVolumeDescriptor;
+use self::record::Record;
+
+/// The size of a *sector* on the ISO.
+///
+/// Not that it is **not** the *logical block* size, which is defined in the Primary
+/// Volume Descriptor, although they are equal most of the time.
+const SECTOR_SIZE: usize = 2048;
 
 
-/// A disk image.
+/// An ISO-9660 filesystem.
 #[derive(Debug)]
 pub struct IsoImage<H>
 where
@@ -19,20 +24,89 @@ where
 {
     handle: H,
     descriptors: Vec<VolumeDescriptor>,
-    blocksize: u32,
+    block_size: usize,
 }
 
 impl<H> IsoImage<H>
 where
     H: ::std::io::Seek + ::std::io::Read,
 {
-    pub fn get_block<'a>(&mut self, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
-        let offset = (block * self.blocksize) as u64;
+
+    /// Open an `IsoImage` stored in the given handle.
+    pub fn new(mut handle: H) -> Result<Self> {
+        let mut block_size = None;
+        let mut descriptors = Vec::new();
+        let mut offset = 0x10;
+        let mut buff = [0; SECTOR_SIZE];
+        let mut terminated = false;
+
+        while let (false, Ok(ref bytes)) =
+            (terminated, Self::get_sector(&mut handle, offset, &mut buff))
+        {
+            let vd = VolumeDescriptor::parse(bytes)?;
+            offset += 1;
+
+            match vd {
+                VolumeDescriptor::Primary(ref pvd) => block_size = Some(pvd.block_size as usize),
+                VolumeDescriptor::Terminator(_) => terminated = true,
+                _ => (),
+            }
+
+            descriptors.push(vd);
+        }
+
+        if !terminated {
+            bail!(::error::ErrorKind::NoSetTerminator)
+        }
+
+        Ok(Self {
+            handle,
+            descriptors,
+            block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
+        })
+    }
+
+    /// Load a sector into the given buffer.
+    ///
+    /// Buffer must have a capacity of exactly `SECTOR_SIZE`.
+    fn get_sector<'a>(handle: &mut H, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
+        let offset = (block * SECTOR_SIZE as u32) as u64;
+        handle.seek(::std::io::SeekFrom::Start(offset))?;
+        handle.read_exact(buf)?;
+        Ok(buf)
+    }
+
+    /// Load a logical block into the given buffer.
+    ///
+    /// Buffer must have a capacity of exactly `self.block_size`.
+    fn get_block<'a>(&mut self, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
+        let offset = (block * self.block_size as u32) as u64;
         self.handle.seek(::std::io::SeekFrom::Start(offset))?;
         self.handle.read_exact(buf)?;
         Ok(buf)
     }
 
+    /// Get the record for the given path, or `Error::NotFound`.
+    fn get_record(&mut self, path: &::std::path::Path) -> Result<Record> {
+        let root = self.pvd()?.root.clone();
+        let mut record = root;
+
+        // FIXME: use canonical path here
+        for component in path.components() {
+            use std::path::Component;
+            record = match component {
+                Component::Normal(s) => record
+                    .children(self)?
+                    .find(|r| s == r.name.as_str())
+                    .ok_or(Error::from_kind(ErrorKind::NotFound(path.to_path_buf())))?,
+                _ => record,
+            };
+        }
+
+        Ok(record)
+    }
+
+    /// Get the Primary Volume Descriptor of this image.
     pub fn pvd(&self) -> Result<&PrimaryVolumeDescriptor> {
         self.descriptors
             .iter()
@@ -44,88 +118,29 @@ where
             .ok_or(Error::from_kind(ErrorKind::NoPrimaryVolumeDescriptor))
     }
 
-    pub fn get_record<P>(&mut self, path: P) -> Result<Record>
+    pub fn read_dir<'a, P>(&'a mut self, path: P) -> Result<Vec<Record>>
     where
         P: AsRef<::std::path::Path>,
     {
-        let ref _path = path.as_ref();
-        let root = self.pvd()?.root.clone();
-        let mut record = root;
-
-        for component in _path.components() {
-            use std::path::Component;
-            record = match component {
-                Component::Normal(s) => record
-                    .children(self)?
-                    .find(|r| s == r.name.as_str())
-                    .ok_or(Error::from_kind(ErrorKind::NotFound(_path.to_path_buf())))?,
-                Component::RootDir => record,
-                _ => record,
-            };
-        }
-
-        Ok(record)
-    }
-
-    pub fn list_records<P>(&mut self, path: P) -> Result<Vec<Record>>
-    where
-        P: AsRef<::std::path::Path>,
-    {
-        let record = self.get_record(path)?;
+        let record = self.get_record(path.as_ref())?;
         Ok(record.children(self)?.collect())
-    }
-
-    pub fn listdir<P>(&mut self, path: P) -> Result<Vec<String>>
-    where
-        P: AsRef<::std::path::Path>,
-    {
-        let record = self.get_record(path)?;
-        println!("{:?}", record);
-        Ok(record.children(self)?.map(|r| r.name).collect())
     }
 
     pub fn open_file<'a, P>(&'a mut self, path: P) -> Result<File<'a, H>>
     where
         P: AsRef<::std::path::Path>,
     {
-        let record = self.get_record(path)?;
-        Ok(File::new(&mut self.handle, record.extent * self.blocksize, record.data_length))
-    }
-}
-
-//
-impl<H> IsoImage<H>
-where
-    H: ::std::io::Seek + ::std::io::Read,
-{
-    pub fn new(handle: H) -> Result<Self> {
-        let mut iso = Self {
-            handle,
-            descriptors: Vec::new(),
-            blocksize: 2048,
-        };
-
-        let mut offset = 0x10;
-        let mut buff = vec![0; iso.blocksize as usize];
-
-        while let Ok(ref bytes) = iso.get_block(offset, &mut buff) {
-            match VolumeDescriptor::parse(bytes)? {
-                vd @ VolumeDescriptor::Terminator(_) => {
-                    iso.descriptors.push(vd);
-                    return Ok(iso);
-                }
-                vd => {
-                    iso.descriptors.push(vd);
-                    offset += 1;
-                }
-            }
-        }
-
-        bail!(::error::ErrorKind::NoSetTerminator)
+        let record = self.get_record(path.as_ref())?;
+        Ok(File::new(
+            &mut self.handle,
+            record.extent * self.block_size as u32,
+            record.data_length,
+        ))
     }
 }
 
 impl IsoImage<::std::fs::File> {
+    /// Open an `IsoImage` located on the filesystem at the given path.
     pub fn from_path<P>(path: P) -> Result<Self>
     where
         P: ::std::convert::AsRef<::std::path::Path>,
@@ -140,6 +155,7 @@ impl<B> IsoImage<::std::io::Cursor<B>>
 where
     B: ::std::convert::AsRef<[u8]>,
 {
+    /// Open an `IsoImage` containted in a buffer of bytes.
     pub fn from_buffer(buffer: B) -> Result<Self> {
         Self::new(::std::io::Cursor::new(buffer))
     }

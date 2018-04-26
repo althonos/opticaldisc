@@ -20,10 +20,10 @@ where
     pub fn new(parent: &'a Record, image: &'a mut IsoImage<H>) -> Self {
         Children {
             parent: parent,
+            buffer: vec![0; image.block_size],
             image,
             block: parent.extent,
             offset: 0,
-            buffer: vec![0; 2048],
             finished: false,
         }
     }

@@ -11,6 +11,6 @@ extern crate nom;
 #[macro_use]
 mod utils;
 
-pub mod error;
 pub mod datetime;
+pub mod error;
 pub mod iso;
