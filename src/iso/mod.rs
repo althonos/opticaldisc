@@ -3,11 +3,15 @@ mod file;
 mod record;
 
 pub use self::file::File;
+pub use self::record::Record;
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::rc::Rc;
 
 use super::error::{Error, ErrorKind, Result};
 use self::descriptors::VolumeDescriptor;
 use self::descriptors::PrimaryVolumeDescriptor;
-use self::record::Record;
 
 /// The size of a *sector* on the ISO.
 ///
@@ -23,6 +27,7 @@ where
 {
     handle: H,
     descriptors: Vec<VolumeDescriptor>,
+    records: HashMap<PathBuf, Rc<Record>>,
     block_size: usize,
 }
 
@@ -32,7 +37,9 @@ where
 {
     /// Open an `IsoImage` stored in the given handle.
     pub fn new(mut handle: H) -> Result<Self> {
+
         let mut block_size = None;
+        let mut records = HashMap::new();
         let mut descriptors = Vec::new();
         let mut offset = 0x10;
         let mut buff = [0; SECTOR_SIZE];
@@ -45,8 +52,11 @@ where
             offset += 1;
 
             match vd {
-                VolumeDescriptor::Primary(ref pvd) => block_size = Some(pvd.block_size as usize),
                 VolumeDescriptor::Terminator(_) => terminated = true,
+                VolumeDescriptor::Primary(ref pvd) => {
+                    block_size = Some(pvd.block_size as usize);
+                    records.insert(PathBuf::from("/"), Rc::clone(&pvd.root));
+                }
                 _ => (),
             }
 
@@ -60,6 +70,7 @@ where
         Ok(Self {
             handle,
             descriptors,
+            records,
             block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
         })
     }
@@ -85,27 +96,36 @@ where
     }
 
     /// Get the record for the given path, or `Error::NotFound`.
-    fn get_record(&mut self, path: &::std::path::Path) -> Result<Record> {
-        let root = self.pvd()?.root.clone();
-        let mut record = root;
+    fn get_record<'a>(&'a mut self, path: &::std::path::Path) -> Result<Rc<Record>> {
 
-        // FIXME: use canonical path here
-        for component in path.components() {
-            use std::path::Component;
-            record = match component {
-                Component::Normal(s) => record
-                    .children(self)?
-                    .find(|r| s == r.name.as_str())
-                    .ok_or(Error::from_kind(ErrorKind::NotFound(path.to_path_buf())))?,
-                _ => record,
-            };
+        // {
+        //     let records = &self.records;
+        if let Some(record) = self.records.get(path) {
+            return Ok(record.clone());
         }
 
-        Ok(record)
+        if let Some(parent_path) = path.parent() {
+
+            let filename = path.file_name();
+            let parent = self.get_record(parent_path)?;
+
+            for child in parent.children(self)?.collect::<Vec<Record>>() {
+                self.records.insert(parent_path.join(&child.name), Rc::new(child));
+            }
+
+            match self.records.get(path) {
+                Some(record) => Ok(record.clone()),
+                None => Err(Error::from_kind(ErrorKind::NotFound(path.to_path_buf())))
+            }
+
+        } else {
+            Ok(self.pvd().root.clone())
+        }
+
     }
 
     /// Get the Primary Volume Descriptor of this image.
-    pub fn pvd(&self) -> Result<&PrimaryVolumeDescriptor> {
+    pub fn pvd<'a>(&'a self) -> &'a PrimaryVolumeDescriptor {
         self.descriptors
             .iter()
             .filter_map(|x| match x {
@@ -113,14 +133,14 @@ where
                 _ => None,
             })
             .next()
-            .ok_or(Error::from_kind(ErrorKind::NoPrimaryVolumeDescriptor))
+            .unwrap()
     }
 
     pub fn read_dir<'a, P>(&'a mut self, path: P) -> Result<Vec<Record>>
     where
         P: AsRef<::std::path::Path>,
     {
-        let record = self.get_record(path.as_ref())?;
+        let ref record = self.get_record(path.as_ref())?;
         Ok(record.children(self)?.collect())
     }
 

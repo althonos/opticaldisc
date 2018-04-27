@@ -2,7 +2,7 @@ use super::super::record::Record;
 
 #[derive(Debug)]
 pub struct PrimaryVolumeDescriptor {
-    pub root: Record,
+    pub root: ::std::rc::Rc<Record>,
     pub block_size: u16,
 }
 
@@ -89,7 +89,7 @@ mod parser {
             app_used:       take!(512)                         >>
             reserved:       take!(653)                         >>
                             (PrimaryVolumeDescriptor {
-                                root,
+                                root: ::std::rc::Rc::new(root),
                                 block_size
                             })
         )
