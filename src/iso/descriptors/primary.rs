@@ -43,7 +43,7 @@ mod parser {
             min:    map_res!(take!(2), btou::<u32>) >>
             sec:    map_res!(take!(2), btou::<u32>) >>
             hun:    map_res!(take!(2), btou::<u32>) >>
-            tz:     be_u8                    >>
+            tz:     be_u8                           >>
                     (
                         FixedOffset::east((tz as i32 - 48) * 900)
                             .ymd(year, month, day)

@@ -13,15 +13,15 @@ use super::Record;
 named!(datetime(&[u8]) -> DateTime<FixedOffset>,
     do_parse!(
         year:  be_u8 >>
-        month: be_u8 >>
-        day:   be_u8 >>
-        hour:  be_u8 >>
-        min:   be_u8 >>
-        sec:   be_u8 >>
-        tz:    be_u8 >>
+        month: matching!(1...12) >>
+        day:   matching!(1...31) >>
+        hour:  matching!(0...23) >>
+        min:   matching!(0...59) >>
+        sec:   matching!(0...59) >>
+        tz:    matching!(0...100) >>
                (FixedOffset::east((tz as i32 - 48) * 900)
-                   .ymd(year as i32 + 1900, month as u32, day as u32)
-                   .and_hms(hour as u32, min as u32, sec as u32)
+                    .ymd(year as i32 + 1900, month as u32, day as u32)
+                    .and_hms(hour as u32, min as u32, sec as u32)
                )
     )
 );
@@ -69,6 +69,7 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
     let (_, length) = peek!(input, be_u8)?;
     let (rem, buf) = take!(input, length)?;
+    println!("{:?}", buf);
     do_parse!(buf,
         length:         be_u8                                                        >>
         ear_length:     be_u8                                                        >>

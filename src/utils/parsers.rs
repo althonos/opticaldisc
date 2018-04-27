@@ -6,6 +6,17 @@ macro_rules! null_terminated (
     })
 );
 
+/// Parse an u8 only if it matches the given pattern.
+macro_rules! matching {
+    ($i: expr, $pattern: pat) => ({
+        match $i.get(0) {
+            None => Err(::nom::Err::Incomplete(::nom::Needed::Size(1))),
+            Some(x @ $pattern) => Ok((&$i[1..], *x)),
+            _ => Err(::nom::Err::Error(::nom::Context::Code($i, ::nom::ErrorKind::Custom(0)))),
+        }
+    })
+}
+
 /// Common code generation for both-endian platform-dependent parser.
 macro_rules! both_endian_impl {
     ($name: ident, $type: ty, $le: path, $be: path) => {
@@ -42,6 +53,15 @@ mod tests {
     fn test_null_terminated() {
         let buf1 = b"TEST\0\0\0";
         assert_eq!(null_terminated!(&buf1[..], 6), Ok((&buf1[6..], &buf1[..4])));
+    }
+
+    #[test]
+    fn test_matching() {
+        let buf1 = b"\x02";
+        assert!(matching!(&buf1[..], _).is_ok());
+        assert!(matching!(&buf1[..], 0).is_err());
+        assert!(matching!(&buf1[..], 1...5).is_ok());
+        assert!(matching!(&buf1[..], 1...2).is_ok());
     }
 
     #[test]
