@@ -6,7 +6,7 @@ where
     H: ::std::io::Seek + ::std::io::Read,
 {
     parent: &'a Record,
-    image: &'a mut IsoImage<H>,
+    image: &'a IsoImage<H>,
     offset: usize,
     block: u32,
     buffer: Vec<u8>,
@@ -17,7 +17,7 @@ impl<'a, H: 'a> Children<'a, H>
 where
     H: ::std::io::Seek + ::std::io::Read,
 {
-    pub fn new(parent: &'a Record, image: &'a mut IsoImage<H>) -> Self {
+    pub fn new(parent: &'a Record, image: &'a IsoImage<H>) -> Self {
         Children {
             parent: parent,
             buffer: vec![0; image.block_size],

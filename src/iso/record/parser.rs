@@ -90,8 +90,8 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
                             ear_length,
                             data_length,
                             seq_number,
-                            _hidden: flags.0,
-                            _dir: flags.1
+                            hidden: flags.0,
+                            dir: flags.1
                         })
     ).map(|(_, r)| (rem, r))
 }

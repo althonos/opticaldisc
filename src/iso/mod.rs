@@ -1,17 +1,18 @@
 mod descriptors;
-mod file;
+mod fs;
 mod record;
 
-pub use self::file::File;
-pub use self::record::Record;
+pub use self::fs::file::File;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use super::error::{Error, ErrorKind, Result};
 use self::descriptors::VolumeDescriptor;
 use self::descriptors::PrimaryVolumeDescriptor;
+use self::record::Record;
 
 /// The size of a *sector* on the ISO.
 ///
@@ -25,9 +26,9 @@ pub struct IsoImage<H>
 where
     H: ::std::io::Seek + ::std::io::Read,
 {
-    handle: H,
+    handle: RefCell<H>,
     descriptors: Vec<VolumeDescriptor>,
-    records: HashMap<PathBuf, Rc<Record>>,
+    records: RefCell<HashMap<PathBuf, Rc<Record>>>,
     block_size: usize,
 }
 
@@ -55,7 +56,7 @@ where
                 VolumeDescriptor::Terminator(_) => terminated = true,
                 VolumeDescriptor::Primary(ref pvd) => {
                     block_size = Some(pvd.block_size as usize);
-                    records.insert(PathBuf::from("/"), Rc::clone(&pvd.root));
+                    records.insert(PathBuf::from("/"), pvd.root.clone());
                 }
                 _ => (),
             }
@@ -68,12 +69,24 @@ where
         }
 
         Ok(Self {
-            handle,
+            handle: RefCell::new(handle),
             descriptors,
-            records,
+            records: RefCell::new(records),
             block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
         })
     }
+
+    ///
+    pub fn read_dir<'a, P>(&'a self, path: P) -> Result<Vec<Record>>
+    where
+        P: AsRef<::std::path::Path>,
+    {
+        let ref record = self.get_record(path.as_ref())?;
+        Ok(record.children(self)?.collect())
+    }
+
+
+
 
     /// Load a sector into the given buffer.
     ///
@@ -88,32 +101,34 @@ where
     /// Load a logical block into the given buffer.
     ///
     /// Buffer must have a capacity of exactly `self.block_size`.
-    fn get_block<'a>(&mut self, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
+    fn get_block<'a>(&self, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
         let offset = (block * self.block_size as u32) as u64;
-        self.handle.seek(::std::io::SeekFrom::Start(offset))?;
-        self.handle.read_exact(buf)?;
+        let mut handle = self.handle.borrow_mut();
+        handle.seek(::std::io::SeekFrom::Start(offset))?;
+        handle.read_exact(buf)?;
         Ok(buf)
     }
 
     /// Get the record for the given path, or `Error::NotFound`.
-    fn get_record<'a>(&'a mut self, path: &::std::path::Path) -> Result<Rc<Record>> {
+    fn get_record<'a>(
+        &'a self,
+        path: &::std::path::Path
+    ) -> Result<Rc<Record>> {
 
-        // {
-        //     let records = &self.records;
-        if let Some(record) = self.records.get(path) {
+        if let Some(record) = self.records.borrow().get(path) {
             return Ok(record.clone());
         }
 
         if let Some(parent_path) = path.parent() {
 
             let filename = path.file_name();
-            let parent = self.get_record(parent_path)?;
+            let ref parent = self.get_record(parent_path)?;
 
-            for child in parent.children(self)?.collect::<Vec<Record>>() {
-                self.records.insert(parent_path.join(&child.name), Rc::new(child));
+            for child in parent.children(self)? {
+                self.records.borrow_mut().insert(parent_path.join(&child.name), Rc::new(child));
             }
 
-            match self.records.get(path) {
+            match self.records.borrow().get(path) {
                 Some(record) => Ok(record.clone()),
                 None => Err(Error::from_kind(ErrorKind::NotFound(path.to_path_buf())))
             }
@@ -121,7 +136,6 @@ where
         } else {
             Ok(self.pvd().root.clone())
         }
-
     }
 
     /// Get the Primary Volume Descriptor of this image.
@@ -136,13 +150,7 @@ where
             .unwrap()
     }
 
-    pub fn read_dir<'a, P>(&'a mut self, path: P) -> Result<Vec<Record>>
-    where
-        P: AsRef<::std::path::Path>,
-    {
-        let ref record = self.get_record(path.as_ref())?;
-        Ok(record.children(self)?.collect())
-    }
+
 
     pub fn open_file<'a, P>(&'a mut self, path: P) -> Result<File<'a, H>>
     where
@@ -157,6 +165,13 @@ where
     }
 }
 
+
+
+
+
+
+
+
 impl IsoImage<::std::fs::File> {
     /// Open an `IsoImage` located on the filesystem at the given path.
     pub fn from_path<P>(path: P) -> Result<Self>
@@ -169,9 +184,7 @@ impl IsoImage<::std::fs::File> {
     }
 }
 
-impl<B> IsoImage<::std::io::Cursor<B>>
-where
-    B: ::std::convert::AsRef<[u8]>,
+impl<B: AsRef<[u8]>> IsoImage<::std::io::Cursor<B>>
 {
     /// Open an `IsoImage` containted in a buffer of bytes.
     pub fn from_buffer(buffer: B) -> Result<Self> {
