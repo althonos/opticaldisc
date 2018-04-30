@@ -1,4 +1,38 @@
-//! ISO-9660 parser library.
+//! [`ISO-9660`] filesystem parser and reader.
+//!
+//! ISO filesystems are commonly found on optical medias such as CD-ROMs, but can also be obtained
+//! from archive files (known as *iso images*) which are 1:1 dumps of ISO-9660 formatted storage.
+//! ISO images are the primary distribution format of many Linux distributions.
+//!
+//! # Parser
+//!
+//! The `iso` module uses the [`nom`](https://docs.rs/nom/) crate to parse a file-handle containing
+//! an ISO filesystem. Directory contents are discovered lazily, and only the *root* directory is
+//! loaded in memory when creating a new [`IsoFs`].
+//!
+//! # References
+//!
+//! Since it cannot be known whether a directory was parsed already or not, most of the methods
+//! of [`IsoFs`] will take a *mutable* reference [`&mut self`] instead of a constant reference
+//! [`&self`]. This makes use of the Rust rule enforcing only a single mutable reference to an
+//! object at a time, which is used here to protect the internal file-handle from concurrent
+//! access, all done at compile-time by the borrow checker.
+//!
+//! If you need to share multiple references to an IsoImage, you should use a [`RefCell`].
+//!
+//! # Examples
+//!
+//! Open a the `static/iso/alpine.level1.iso` file and find all the directories in the *root*:
+//!
+//! ```rust
+//! # extern crate opticaldisc;
+//! use opticaldisc::iso::Metadata;
+//!
+//! let mut iso = opticaldisc::iso::IsoFs::from_path("static/iso/alpine.level1.iso").unwrap();
+//! let contents: Vec<Metadata> = iso.read_dir("/").unwrap().into_iter().collect();
+//! # assert!(!contents.is_empty())
+//! ```
+//!
 
 mod descriptors;
 mod file;
@@ -17,11 +51,9 @@ pub use self::readdir::ReadDir;
 pub use self::metadata::Metadata;
 
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::io::Read;
 use std::io::Seek;
 use std::path::Path;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use super::error::Result;
@@ -29,29 +61,51 @@ use super::error::Error;
 use super::error::ErrorKind;
 
 use self::node::Node;
-use self::record::Record;
 
 /// An ISO-9660 filesystem.
 pub struct IsoFs<H: Read + Seek> {
-    handle: RefCell<H>,
-    root: Rc<RefCell<Node>>,
+    handle: H,
+    root: Rc<Node>,
     block_size: u16,
 }
 
 // Common methods
 impl<H: Read + Seek> IsoFs<H> {
     /// Get an iterator over a directory content.
-    pub fn read_dir<P: AsRef<Path>>(&self) -> Result<ReadDir> {
-        panic!("TODO")
+    ///
+    /// The directory contents are loaded before the [`ReadDir`] iterator is created if they were
+    /// not already. This allows the iterator to outlive the reference to the `IsoFs`.
+    ///
+    /// # Errors
+    ///
+    /// * [`NotFound`] when the resource could not be found
+    /// * [`DirectoryExpected`] when the resource is not a directory
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::path::Path;
+    /// # let mut iso = opticaldisc::iso::IsoFs::from_path("static/iso/alpine.level1.iso").unwrap();
+    /// for entry in iso.read_dir("ETC/APK").unwrap().into_iter() {
+    ///    if entry.name() == "ARCH" {
+    ///        assert!(entry.is_file());
+    ///        assert_eq!(entry.path(), Path::new("/ETC/APK/ARCH"));
+    ///    }
+    /// }
+    /// ```
+    pub fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<ReadDir> {
+        let node = self.node(path.as_ref())?;
+        node.as_ref().load_children(&mut self.handle)?;
+        ReadDir::new(node)
     }
 
     /// Get metadata about a resource located at the given path.
-    pub fn metadata<P: AsRef<Path>>(&self, path: P) -> Result<Metadata> {
-        self.metadata_impl(path.as_ref()).map(Metadata::from)
+    pub fn metadata<P: AsRef<Path>>(&mut self, path: P) -> Result<Metadata> {
+        self.node(path.as_ref()).map(Metadata::from)
     }
 
-    fn metadata_impl(&self, path: &Path) -> Result<Rc<RefCell<Node>>> {
-        let mut node: Rc<RefCell<Node>> = self.root.clone();
+    fn node(&mut self, path: &Path) -> Result<Rc<Node>> {
+        let mut node: Rc<Node> = self.root.clone();
 
         for component in path.components() {
             use std::path::Component::*;
@@ -61,34 +115,32 @@ impl<H: Read + Seek> IsoFs<H> {
                 RootDir => self.root.clone(),
                 Normal(name) => {
                     let name_str = name.to_str().expect("not utf-8");
-                    node.as_ref().borrow_mut().child(name_str, &self.handle)?
+                    node.as_ref().child(name_str, &mut self.handle)?
                 }
-                ParentDir => {
-                    self.metadata_impl(node.as_ref().borrow().path().parent().expect("no parent"))?
-                }
+                ParentDir => self.node(node.as_ref().path.parent().expect("no parent"))?,
             }
         }
 
         Ok(node)
     }
 
-    /// Check if a directory exists on the filesystem.
-    pub fn is_dir<P: AsRef<Path>>(&self, path: P) -> bool {
-        self.metadata(path)
-            .map(|meta| meta.is_dir())
+    /// Check if the given path maps to a directory on the filesystem.
+    pub fn is_dir<P: AsRef<Path>>(&mut self, path: P) -> bool {
+        self.node(path.as_ref())
+            .map(|n| n.as_ref().record.is_dir)
             .unwrap_or(false)
     }
 
-    /// Check if a file exists on the filesystem.
-    pub fn is_file<P: AsRef<Path>>(&self, path: P) -> bool {
-        self.metadata(path)
-            .map(|meta| meta.is_file())
+    /// Check if the given path maps to a file on the filesystem.
+    pub fn is_file<P: AsRef<Path>>(&mut self, path: P) -> bool {
+        self.node(path.as_ref())
+            .map(|n| !n.as_ref().record.is_dir)
             .unwrap_or(false)
     }
 
     /// Check if a resource with the given path exists on the filesystem.
-    pub fn exists<P: AsRef<Path>>(&self, path: P) -> bool {
-        panic!("TODO")
+    pub fn exists<P: AsRef<Path>>(&mut self, path: P) -> bool {
+        self.node(path.as_ref()).is_ok()
     }
 
     /// Open the file located
@@ -141,11 +193,12 @@ impl<H: Read + Seek> IsoFs<H> {
         }
 
         Ok(Self {
-            handle: RefCell::new(handle),
+            handle,
             block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
-            root: root.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)
-                .map(RefCell::new)
-                .map(Rc::new)?,
+            root: match root {
+                Some(node) => Rc::new(node),
+                None => bail!(ErrorKind::NoPrimaryVolumeDescriptor),
+            },
         })
     }
 }

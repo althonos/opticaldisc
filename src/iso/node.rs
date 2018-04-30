@@ -14,13 +14,14 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 
 use super::record::Record;
+use super::readdir::ReadDir;
 use super::constants::SECTOR_SIZE;
 
 /// A node from an ISO-9660 filesystem.
 pub(in iso) struct Node {
-    path: PathBuf,
-    record: Record,
-    contents: Option<HashMap<String, Rc<RefCell<Node>>>>,
+    pub path: PathBuf,
+    pub record: Record,
+    pub contents: RefCell<Option<HashMap<String, Rc<Node>>>>,
 }
 
 impl Node {
@@ -28,7 +29,7 @@ impl Node {
         Self {
             path: PathBuf::from("/"),
             record: record,
-            contents: None,
+            contents: RefCell::new(None),
         }
     }
 
@@ -36,45 +37,38 @@ impl Node {
         Self {
             path: self.path.join(&record.name),
             record: record,
-            contents: None,
+            contents: RefCell::new(None),
         }
     }
 }
 
 impl Node {
-    pub(in iso) fn is_dir(&self) -> bool {
-        self.record.is_dir
-    }
-
-    pub(in iso) fn is_file(&self) -> bool {
-        !self.is_dir()
-    }
-
-    pub(in iso) fn path(&self) -> &Path {
-        self.path.as_ref()
-    }
-
-    pub(in iso) fn child<H>(&mut self, name: &str, handle: &RefCell<H>) -> Result<Rc<RefCell<Self>>>
+    pub(in iso) fn child<H>(&self, name: &str, handle: &mut H) -> Result<Rc<Self>>
     where
         H: Read + Seek,
     {
-        if self.is_file() {
+        if !self.record.is_dir {
             bail!(ErrorKind::DirectoryExpected)
         }
-
-        if self.contents.is_none() {
-            self.parse_children(handle)?;
+        self.load_children(handle)?;
+        match self.contents.borrow().as_ref().unwrap().get(name) {
+            Some(rc) => Ok(rc.clone()),
+            None => Err(Error::from(ErrorKind::NotFound(self.path.join(name)))),
         }
-
-        self.contents
-            .as_ref()
-            .unwrap()
-            .get(name)
-            .map(|rc| rc.clone())
-            .ok_or(Error::from(ErrorKind::NotFound(self.path.join(name))))
     }
 
-    fn parse_children<H>(&mut self, handle: &RefCell<H>) -> Result<()>
+    pub(in iso) fn load_children<H>(&self, handle: &mut H) -> Result<()>
+    where
+        H: Read + Seek,
+    {
+        if self.contents.borrow().is_none() {
+            self.parse_children(handle)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn parse_children<H>(&self, handle: &mut H) -> Result<()>
     where
         H: Read + Seek,
     {
@@ -82,22 +76,20 @@ impl Node {
         let mut contents = HashMap::new();
         let mut buffer = [0; SECTOR_SIZE as usize];
 
-        handle
-            .borrow_mut()
-            .seek(SeekFrom::Start(self.record.extent as u64 * SECTOR_SIZE));
+        handle.seek(SeekFrom::Start(self.record.extent as u64 * SECTOR_SIZE))?;
 
         loop {
             offset = 0;
-            handle.borrow_mut().read_exact(&mut buffer)?;
+            handle.read_exact(&mut buffer)?;
 
             while let Ok((rem, record)) = super::record::parser::record(&buffer[offset..]) {
                 offset = SECTOR_SIZE as usize - rem.len();
                 if record.name == "\0" && record.extent != self.record.extent {
-                    self.contents = Some(contents);
+                    self.contents.replace(Some(contents));
                     return Ok(());
                 } else if record.name != "\0" && record.name != "\x01" {
                     let name = record.name.clone();
-                    let node = Rc::new(RefCell::new(self.create_child(record)));
+                    let node = Rc::new(self.create_child(record));
                     contents.insert(name, node);
                 }
             }
