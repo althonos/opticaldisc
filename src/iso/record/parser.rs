@@ -4,6 +4,8 @@ use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::offset::FixedOffset;
 
+use memchr::memrchr;
+
 use nom::be_u8;
 use nom::Context;
 use nom::Err::Failure;
@@ -33,24 +35,29 @@ named!(datetime(&[u8]) -> DateTime<FixedOffset>,
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub fn versioned_name(input: &[u8], is_dir: bool) -> ::nom::IResult<&[u8], (&str, Option<u8>)> {
 
+    let version: Option<u8>;
+    let name: &[u8];
+
     let (i1, size) = try_parse!(input, be_u8);
     let (i2, buff) = try_parse!(i1, take!(size));
     let len = size as usize;
 
-    let (name, version) = if len < 3 || is_dir {
-        (buff, None)
-    } else if buff[len-2] == b';' && buff[len-3] == b'.' {
-        (&buff[..len-3], Some(buff[len-1]))
-    } else if input[len-2] == b';' {
-        (&buff[..len-2], Some(buff[len-1]))
+    if let Some(sep) = memrchr(b';', buff) {
+        name = if buff[sep-1] == b'.' { &buff[..sep - 1] } else { &buff[..sep] };
+        version = match btou(&buff[sep+1..]) {
+            Ok(version_num) => Some(version_num),
+            Err(_) => return Err(Failure(Context::Code(&buff[sep+1..], ::nom::ErrorKind::MapRes))),
+        };
     } else {
-        (buff, None)
-    };
+        name = &buff[..];
+        version = None
+    }
 
     match ::std::str::from_utf8(name) {
-        Ok(name) => Ok((i2, (name, version))),
-        Err(err) => Err(Failure(Context::Code(input, ::nom::ErrorKind::MapRes))),
+        Ok(name_str) => Ok((i2, (name_str, version))),
+        Err(_) => Err(Failure(Context::Code(&buff[len-1..], ::nom::ErrorKind::MapRes))),
     }
+
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -79,18 +86,18 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 #[cfg_attr(rustfmt, rustfmt_skip)]
 named!(pub record(&[u8]) -> Record,
     do_parse!(
-        length:         be_u8                                 >>
-        ear_length:     be_u8                                 >>
-        extent:         both_u32                              >>
-        data_length:    both_u32                              >>
-        date:           datetime                              >>
-        flags:          record_flags                          >>
-        unit_size:      be_u8                                 >>
-        gap_size:       be_u8                                 >>
-        seq_number:     both_u16                              >>
-        id_length:      peek!(be_u8)                          >>
-        versioned_id:   apply!(versioned_name, flags.1)       >>
-                        take!(length - id_length - 33)        >>
+        length:         be_u8                           >>
+        ear_length:     be_u8                           >>
+        extent:         both_u32                        >>
+        data_length:    both_u32                        >>
+        date:           datetime                        >>
+        flags:          record_flags                    >>
+        unit_size:      be_u8                           >>
+        gap_size:       be_u8                           >>
+        seq_number:     both_u16                        >>
+        id_length:      peek!(be_u8)                    >>
+        versioned_id:   apply!(versioned_name, flags.1) >>
+                        take!(length - id_length - 33)  >>
                         (Record {
                             name: versioned_id.0.to_owned(),
                             version: versioned_id.1,

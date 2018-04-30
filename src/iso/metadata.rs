@@ -18,7 +18,6 @@ use super::IsoFs;
 pub struct Metadata(Rc<Node>);
 
 impl Metadata {
-
     pub fn is_dir(&self) -> bool {
         self.0.as_ref().record.is_dir
     }
@@ -43,7 +42,6 @@ impl Metadata {
             Err(Error::from_kind(ErrorKind::DirectoryExpected))
         }
     }
-    
 }
 
 #[doc(hidden)]

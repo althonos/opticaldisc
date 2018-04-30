@@ -1,9 +1,9 @@
 /// Parse a null-terminated string from a fixed-length field.
 macro_rules! null_terminated (
-    ($i: expr, $size: expr) => ({
+    ($i: expr, $size: expr) => (
         take!($i, $size)
-            .and_then(|(rem, raw)| take_while!(raw, |x| x != 0).map(|(_, s)| (rem, s)))
-    })
+            .and_then(|x| take_until!(x.1, (&[0][..])).map(|y| (x.0, y.1)))
+    )
 );
 
 /// Parse an u8 only if it matches the given pattern.
@@ -55,6 +55,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unreachable_pattern)]
     fn test_matching() {
         let buf1 = b"\x02";
         assert!(matching!(&buf1[..], _).is_ok());

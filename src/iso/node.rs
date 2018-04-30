@@ -1,11 +1,8 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::collections::HashMap;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
-use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -14,7 +11,6 @@ use crate::error::ErrorKind;
 use crate::error::Result;
 
 use super::record::Record;
-use super::readdir::ReadDir;
 use super::constants::SECTOR_SIZE;
 
 /// A node from an ISO-9660 filesystem.
@@ -72,7 +68,6 @@ impl Node {
     where
         H: Read + Seek,
     {
-
         use super::record::parser::record;
 
         let mut offset: usize;

@@ -14,7 +14,6 @@ where
     H: ::std::io::Seek + ::std::io::Read,
 {
     pub fn new(handle: &'a mut H, start: u32, length: u32) -> Self {
-        handle.seek(::std::io::SeekFrom::Start(start as u64));
         Self {
             handle,
             start,
@@ -29,7 +28,7 @@ where
     H: ::std::io::Seek + ::std::io::Read,
 {
     fn read(&mut self, buffer: &mut [u8]) -> ::std::io::Result<usize> {
-        // let res = self.handle.borrow_mut().take(self.length as u64 - self.pos).read(buffer);
+        let res = self.handle.take(self.length as u64 - self.pos).read(buffer);
         let size = self.length as u64 - self.pos;
         let res = self.handle.read(&mut buffer[..size as usize]);
         if let Ok(bytes_read) = res {

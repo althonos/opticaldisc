@@ -2,7 +2,6 @@
 // - iterate on contents instead of collecting everything (tricky lifetimes)
 
 use std::rc::Rc;
-use std::collections::hash_map::Values;
 
 use crate::error::Error;
 use crate::error::ErrorKind;

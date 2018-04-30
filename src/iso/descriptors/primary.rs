@@ -1,6 +1,3 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-
 use super::super::record::Record;
 
 #[derive(Debug)]
@@ -33,7 +30,6 @@ mod parser {
 
     use super::PrimaryVolumeDescriptor;
     use super::super::super::record::parser::record;
-
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
     named!(datetime(&[u8]) -> DateTime<FixedOffset>,

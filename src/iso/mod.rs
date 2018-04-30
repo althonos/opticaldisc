@@ -78,7 +78,6 @@ pub struct IsoFs<H: Read + Seek> {
 
 // Common methods
 impl<H: Read + Seek> IsoFs<H> {
-
     /// Get a reference to a node from the ISO filesystem tree.
     fn node(&mut self, path: &Path) -> Result<Rc<Node>> {
         let mut node: Rc<Node> = self.root.clone();

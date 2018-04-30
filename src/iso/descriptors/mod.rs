@@ -2,12 +2,17 @@ mod boot;
 mod terminator;
 mod primary;
 
-use error::Result;
-use error::ErrorKind;
-
 pub use self::boot::BootRecord;
 pub use self::terminator::SetTerminator;
 pub use self::primary::PrimaryVolumeDescriptor;
+
+use nom::Err::Incomplete;
+use nom::Needed::Size;
+
+use crate::error::Result;
+use crate::error::ErrorKind;
+
+use super::constants::SECTOR_SIZE;
 
 #[derive(Debug)]
 pub enum VolumeDescriptor {
@@ -18,11 +23,13 @@ pub enum VolumeDescriptor {
 
 impl VolumeDescriptor {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
+        use self::VolumeDescriptor::*;
+
         Ok(match bytes.first() {
-            None => bail!(::nom::Err::Incomplete::<&[u8]>(::nom::Needed::Size(2048))),
-            Some(0x00) => VolumeDescriptor::Boot(BootRecord::parse(bytes)?),
-            Some(0x01) => VolumeDescriptor::Primary(PrimaryVolumeDescriptor::parse(bytes)?),
-            Some(0xFF) => VolumeDescriptor::Terminator(SetTerminator::parse(bytes)?),
+            None => bail!(Incomplete::<&[u8]>(Size(SECTOR_SIZE as usize))),
+            Some(0x00) => Boot(BootRecord::parse(bytes)?),
+            Some(0x01) => Primary(PrimaryVolumeDescriptor::parse(bytes)?),
+            Some(0xFF) => Terminator(SetTerminator::parse(bytes)?),
             Some(othr) => bail!(ErrorKind::UnknownDescriptorType(*othr)),
         })
     }

@@ -1,6 +1,7 @@
 //! A crate to parse filesystems used on optical media storage.
 #![feature(slice_patterns)]
 #![feature(crate_in_paths)]
+#![feature(transpose_result)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
@@ -8,6 +9,7 @@ extern crate btoi;
 extern crate chrono;
 #[macro_use]
 extern crate error_chain;
+extern crate memchr;
 #[macro_use]
 extern crate nom;
 
