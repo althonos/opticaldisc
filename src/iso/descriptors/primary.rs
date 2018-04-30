@@ -32,7 +32,8 @@ mod parser {
     use utils::parsers::both_u32;
 
     use super::PrimaryVolumeDescriptor;
-    use super::Record;
+    use super::super::super::record::parser::record;
+
 
     #[cfg_attr(rustfmt, rustfmt_skip)]
     named!(datetime(&[u8]) -> DateTime<FixedOffset>,
@@ -72,7 +73,7 @@ mod parser {
             block_size:     both_u16                           >>
             pt_size:        both_u32                           >>
                             take!(16)                          >>
-            root:           map_res!(take!(34), Record::parse) >>
+            root:           record                             >>
             set_id:         take!(128)                         >>
             pub_id:         take!(128)                         >>
             prep_id:        take!(128)                         >>

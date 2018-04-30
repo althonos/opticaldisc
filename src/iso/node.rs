@@ -72,6 +72,9 @@ impl Node {
     where
         H: Read + Seek,
     {
+
+        use super::record::parser::record;
+
         let mut offset: usize;
         let mut contents = HashMap::new();
         let mut buffer = [0; SECTOR_SIZE as usize];
@@ -82,7 +85,7 @@ impl Node {
             offset = 0;
             handle.read_exact(&mut buffer)?;
 
-            while let Ok((rem, record)) = super::record::parser::record(&buffer[offset..]) {
+            while let Ok((rem, record)) = record(&buffer[offset..]) {
                 offset = SECTOR_SIZE as usize - rem.len();
                 if record.name == "\0" && record.extent != self.record.extent {
                     self.contents.replace(Some(contents));

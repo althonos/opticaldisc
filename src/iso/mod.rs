@@ -1,38 +1,46 @@
 //! [`ISO-9660`] filesystem parser and reader.
 //!
-//! ISO filesystems are commonly found on optical medias such as CD-ROMs, but can also be obtained
-//! from archive files (known as *iso images*) which are 1:1 dumps of ISO-9660 formatted storage.
-//! ISO images are the primary distribution format of many Linux distributions.
+//! ISO filesystems are commonly found on optical medias such as CD-ROMs, but
+//! can also be obtained from archive files (known as *iso images*) which are
+//! 1:1 binary dumps of ISO-9660 formatted storage. ISO images are the primary
+//! distribution format of many Linux distributions.
 //!
 //! # Parser
 //!
-//! The `iso` module uses the [`nom`](https://docs.rs/nom/) crate to parse a file-handle containing
-//! an ISO filesystem. Directory contents are discovered lazily, and only the *root* directory is
-//! loaded in memory when creating a new [`IsoFs`].
+//! The `iso` module uses the [`nom`] crate to parse a file-handle containing
+//! an ISO filesystem. Directory contents are discovered lazily, and only the
+//! *root* directory is loaded in memory when creating a new [`IsoFs`].
 //!
 //! # References
 //!
-//! Since it cannot be known whether a directory was parsed already or not, most of the methods
-//! of [`IsoFs`] will take a *mutable* reference [`&mut self`] instead of a constant reference
-//! [`&self`]. This makes use of the Rust rule enforcing only a single mutable reference to an
-//! object at a time, which is used here to protect the internal file-handle from concurrent
-//! access, all done at compile-time by the borrow checker.
+//! Since it cannot be known whether a directory was parsed already or not, most
+//! of the methods of [`IsoFs`] will take a *mutable* reference [`&mut self`]
+//! instead of a constant reference [`&self`]. This makes use of the Rust rule
+//! enforcing only a single mutable reference to an object at a time, which is
+//! used here to protect the internal file-handle from concurrent access, all
+//! done at compile-time by the borrow checker.
 //!
-//! If you need to share multiple references to an IsoImage, you should use a [`RefCell`].
+//! If you need to share multiple references to an IsoImage, you should use a
+//! [`RefCell`].
 //!
 //! # Examples
 //!
-//! Open a the `static/iso/alpine.level1.iso` file and find all the directories in the *root*:
+//! Open a the `static/iso/alpine.level1.iso` file and find all the directories
+//! in the *root*:
 //!
 //! ```rust
 //! # extern crate opticaldisc;
 //! use opticaldisc::iso::Metadata;
 //!
-//! let mut iso = opticaldisc::iso::IsoFs::from_path("static/iso/alpine.level1.iso").unwrap();
+//! let path = "static/iso/alpine.level1.iso";
+//! let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
 //! let contents: Vec<Metadata> = iso.read_dir("/").unwrap().into_iter().collect();
 //! # assert!(!contents.is_empty())
 //! ```
 //!
+//! [`ISO-9660`]: https://en.wikipedia.org/wiki/ISO_9660
+//! [`nom`]: https://docs.rs/nom/
+//! [`IsoFs`]: struct.IsoFs.html
 
 mod descriptors;
 mod file;
@@ -50,7 +58,6 @@ pub use self::file::IsoFile;
 pub use self::readdir::ReadDir;
 pub use self::metadata::Metadata;
 
-use std::cell::RefCell;
 use std::io::Read;
 use std::io::Seek;
 use std::path::Path;
@@ -71,39 +78,8 @@ pub struct IsoFs<H: Read + Seek> {
 
 // Common methods
 impl<H: Read + Seek> IsoFs<H> {
-    /// Get an iterator over a directory content.
-    ///
-    /// The directory contents are loaded before the [`ReadDir`] iterator is created if they were
-    /// not already. This allows the iterator to outlive the reference to the `IsoFs`.
-    ///
-    /// # Errors
-    ///
-    /// * [`NotFound`] when the resource could not be found
-    /// * [`DirectoryExpected`] when the resource is not a directory
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use std::path::Path;
-    /// # let mut iso = opticaldisc::iso::IsoFs::from_path("static/iso/alpine.level1.iso").unwrap();
-    /// for entry in iso.read_dir("ETC/APK").unwrap().into_iter() {
-    ///    if entry.name() == "ARCH" {
-    ///        assert!(entry.is_file());
-    ///        assert_eq!(entry.path(), Path::new("/ETC/APK/ARCH"));
-    ///    }
-    /// }
-    /// ```
-    pub fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<ReadDir> {
-        let node = self.node(path.as_ref())?;
-        node.as_ref().load_children(&mut self.handle)?;
-        ReadDir::new(node)
-    }
 
-    /// Get metadata about a resource located at the given path.
-    pub fn metadata<P: AsRef<Path>>(&mut self, path: P) -> Result<Metadata> {
-        self.node(path.as_ref()).map(Metadata::from)
-    }
-
+    /// Get a reference to a node from the ISO filesystem tree.
     fn node(&mut self, path: &Path) -> Result<Rc<Node>> {
         let mut node: Rc<Node> = self.root.clone();
 
@@ -124,7 +100,74 @@ impl<H: Read + Seek> IsoFs<H> {
         Ok(node)
     }
 
+    /// Get an iterator over a directory content.
+    ///
+    /// The directory contents are loaded before the [`ReadDir`] iterator is
+    /// created if they were not already. This allows the iterator to outlive
+    /// the reference to the `IsoFs`.
+    ///
+    /// # Errors
+    ///
+    /// * [`NotFound`] when the resource could not be found
+    /// * [`DirectoryExpected`] when the resource is not a directory
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::path::Path;
+    /// # let path = Path::new("static/iso/alpine.level1.iso");
+    /// # let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
+    /// for entry in iso.read_dir("ETC/APK").unwrap().into_iter() {
+    ///    if entry.name() == "ARCH" {
+    ///        assert!(entry.is_file());
+    ///        assert_eq!(entry.path(), Path::new("/ETC/APK/ARCH"));
+    ///    }
+    /// }
+    /// ```
+    pub fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<ReadDir> {
+        let node = self.node(path.as_ref())?;
+        node.as_ref().load_children(&mut self.handle)?;
+        ReadDir::new(node)
+    }
+
+    /// Get metadata about a resource located at the given path.
+    ///
+    /// # Errors
+    ///
+    /// * [`NotFound`] when the resource could not be found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::path::Path;
+    /// # let path = Path::new("static/iso/alpine.level1.iso");
+    /// # let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
+    /// let root = iso.metadata("/").unwrap();
+    /// assert!(root.is_dir());
+    /// assert_eq!(root.path(), Path::new("/"));
+    /// ```
+    ///
+    pub fn metadata<P: AsRef<Path>>(&mut self, path: P) -> Result<Metadata> {
+        self.node(path.as_ref()).map(Metadata::from)
+    }
+
     /// Check if the given path maps to a directory on the filesystem.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use std::path::Path;
+    /// # let path = Path::new("static/iso/alpine.level1.iso");
+    /// # let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
+    /// # assert!(
+    /// iso.is_dir("/ETC/APK")        // absolute path
+    /// # );
+    /// # assert!(!
+    /// iso.is_dir("ETC/APK/ARCH")    // relative path
+    /// # );
+    /// # assert!(!iso.is_dir("NO-SUCH-FILE"));
+    /// ```
+    ///
     pub fn is_dir<P: AsRef<Path>>(&mut self, path: P) -> bool {
         self.node(path.as_ref())
             .map(|n| n.as_ref().record.is_dir)
