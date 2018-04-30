@@ -1,8 +1,12 @@
+use btoi::btou;
+
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::offset::FixedOffset;
 
 use nom::be_u8;
+use nom::Context;
+use nom::Err::Failure;
 
 use utils::parsers::both_u16;
 use utils::parsers::both_u32;
@@ -27,19 +31,26 @@ named!(datetime(&[u8]) -> DateTime<FixedOffset>,
 );
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-pub fn filename(input: &[u8], is_dir: bool) -> Result<(&str, Option<u8>), ::std::str::Utf8Error> {
-    let size = input.len();
-    let (name, version) = if size < 3 || is_dir {
-        (input, None)
+pub fn versioned_name(input: &[u8], is_dir: bool) -> ::nom::IResult<&[u8], (&str, Option<u8>)> {
+
+    let (i1, size) = try_parse!(input, be_u8);
+    let (i2, buff) = try_parse!(i1, take!(size));
+    let len = size as usize;
+
+    let (name, version) = if len < 3 || is_dir {
+        (buff, None)
+    } else if buff[len-2] == b';' && buff[len-3] == b'.' {
+        (&buff[..len-3], Some(buff[len-1]))
+    } else if input[len-2] == b';' {
+        (&buff[..len-2], Some(buff[len-1]))
     } else {
-        match &input[size-3..] {
-            &[b'.', b';', v] => (&input[..size-3], Some(v)),
-            &[  _,  b';', v] => (&input[..size-2], Some(v)),
-            &[  _,    _,  _] => ( input,       None),
-                           _ => unreachable!()
-        }
+        (buff, None)
     };
-    Ok((::std::str::from_utf8(name)?, version))
+
+    match ::std::str::from_utf8(name) {
+        Ok(name) => Ok((i2, (name, version))),
+        Err(err) => Err(Failure(Context::Code(input, ::nom::ErrorKind::MapRes))),
+    }
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -66,21 +77,20 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 );
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
-pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
-    let (_, length) = peek!(input, be_u8)?;
-    let (rem, buf) = take!(input, length)?;
-    do_parse!(buf,
-        length:         be_u8                                                        >>
-        ear_length:     be_u8                                                        >>
-        extent:         both_u32                                                     >>
-        data_length:    both_u32                                                     >>
-        date:           datetime                                                     >>
-        flags:          record_flags                                                 >>
-        unit_size:      be_u8                                                        >>
-        gap_size:       be_u8                                                        >>
-        seq_number:     both_u16                                                     >>
-        id_length:      be_u8                                                        >>
-        versioned_id:   map_res!(take!(id_length), |id| filename(id, flags.1))       >>
+named!(pub record(&[u8]) -> Record,
+    do_parse!(
+        length:         be_u8                                 >>
+        ear_length:     be_u8                                 >>
+        extent:         both_u32                              >>
+        data_length:    both_u32                              >>
+        date:           datetime                              >>
+        flags:          record_flags                          >>
+        unit_size:      be_u8                                 >>
+        gap_size:       be_u8                                 >>
+        seq_number:     both_u16                              >>
+        id_length:      peek!(be_u8)                          >>
+        versioned_id:   apply!(versioned_name, flags.1)       >>
+                        take!(length - id_length - 33)        >>
                         (Record {
                             name: versioned_id.0.to_owned(),
                             version: versioned_id.1,
@@ -92,8 +102,8 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
                             is_hidden: flags.0,
                             is_dir: flags.1
                         })
-    ).map(|(_, r)| (rem, r))
-}
+    )
+);
 
 #[cfg(test)]
 mod tests {
@@ -107,7 +117,9 @@ mod tests {
         let dr = super::record(buf).unwrap();
 
         let buf2 = b"`\x00\x13\x00\x00\x00\x00\x00\x00\x13\x00\x08\x00\x00\x00\x00\x08\x00v\x04\x01\x05\x05\x17\x00\x02\x00\x00\x01\x00\x00\x01\x01\x01PX$\x01\xedA\x00\x00\x00\x00A\xed\x01\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00TF\x1a\x01\x0ev\x04\x01\x05\x05\x17\x00v\x04\x01\x05\x05\x18\x00v\x04\x01\x05\x05\x17\x00";
-        let dr = super::record(&buf2[..]).unwrap();
+        let dr = super::record(&buf2[..]);
+        println!("{:?}", dr);
+        dr.unwrap();
     }
 
     #[test]
