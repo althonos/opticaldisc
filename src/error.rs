@@ -1,3 +1,5 @@
+//! Common errors using the [`error-chain`](https://docs.rs/error-chain) library
+
 error_chain!{
     foreign_links {
         Io(::std::io::Error);

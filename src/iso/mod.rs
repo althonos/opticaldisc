@@ -1,192 +1,168 @@
+//! ISO-9660 parser library.
+
 mod descriptors;
-mod fs;
+mod file;
+mod metadata;
+mod node;
+mod readdir;
 mod record;
 
-pub use self::fs::file::File;
-
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::cell::RefCell;
-
-use super::error::{Error, ErrorKind, Result};
-use self::descriptors::VolumeDescriptor;
-use self::descriptors::PrimaryVolumeDescriptor;
-use self::record::Record;
-
-/// The size of a *sector* on the ISO.
-///
-/// Not that it is **not** the *logical block* size, which is defined in the Primary
-/// Volume Descriptor, although they are equal most of the time.
-const SECTOR_SIZE: usize = 2048;
-
-/// An ISO-9660 filesystem.
-#[derive(Debug)]
-pub struct IsoImage<H>
-where
-    H: ::std::io::Seek + ::std::io::Read,
-{
-    handle: RefCell<H>,
-    descriptors: Vec<VolumeDescriptor>,
-    records: RefCell<HashMap<PathBuf, Rc<Record>>>,
-    block_size: usize,
+mod constants {
+    pub const SECTOR_SIZE: u64 = 2048;
+    pub const DEFAULT_BLOCK_SIZE: u64 = 2048;
 }
 
-impl<H> IsoImage<H>
-where
-    H: ::std::io::Seek + ::std::io::Read,
-{
-    /// Open an `IsoImage` stored in the given handle.
-    pub fn new(mut handle: H) -> Result<Self> {
+pub use self::file::IsoFile;
+pub use self::readdir::ReadDir;
+pub use self::metadata::Metadata;
 
-        let mut block_size = None;
-        let mut records = HashMap::new();
-        let mut descriptors = Vec::new();
+use std::cell::RefCell;
+use std::cell::RefMut;
+use std::io::Read;
+use std::io::Seek;
+use std::path::Path;
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use super::error::Result;
+use super::error::Error;
+use super::error::ErrorKind;
+
+use self::node::Node;
+use self::record::Record;
+
+/// An ISO-9660 filesystem.
+pub struct IsoFs<H: Read + Seek> {
+    handle: RefCell<H>,
+    root: Rc<RefCell<Node>>,
+    block_size: u16,
+}
+
+// Common methods
+impl<H: Read + Seek> IsoFs<H> {
+    /// Get an iterator over a directory content.
+    pub fn read_dir<P: AsRef<Path>>(&self) -> Result<ReadDir> {
+        panic!("TODO")
+    }
+
+    /// Get metadata about a resource located at the given path.
+    pub fn metadata<P: AsRef<Path>>(&self, path: P) -> Result<Metadata> {
+        self.metadata_impl(path.as_ref()).map(Metadata::from)
+    }
+
+    fn metadata_impl(&self, path: &Path) -> Result<Rc<RefCell<Node>>> {
+        let mut node: Rc<RefCell<Node>> = self.root.clone();
+
+        for component in path.components() {
+            use std::path::Component::*;
+            node = match component {
+                Prefix(_) => bail!(ErrorKind::Msg(String::from("what the fuck are you doing?"))),
+                CurDir => node,
+                RootDir => self.root.clone(),
+                Normal(name) => {
+                    let name_str = name.to_str().expect("not utf-8");
+                    node.as_ref().borrow_mut().child(name_str, &self.handle)?
+                }
+                ParentDir => {
+                    self.metadata_impl(node.as_ref().borrow().path().parent().expect("no parent"))?
+                }
+            }
+        }
+
+        Ok(node)
+    }
+
+    /// Check if a directory exists on the filesystem.
+    pub fn is_dir<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.metadata(path)
+            .map(|meta| meta.is_dir())
+            .unwrap_or(false)
+    }
+
+    /// Check if a file exists on the filesystem.
+    pub fn is_file<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.metadata(path)
+            .map(|meta| meta.is_file())
+            .unwrap_or(false)
+    }
+
+    /// Check if a resource with the given path exists on the filesystem.
+    pub fn exists<P: AsRef<Path>>(&self, path: P) -> bool {
+        panic!("TODO")
+    }
+
+    /// Open the file located
+    pub fn open_file<P: AsRef<Path>>(&mut self, p: P) -> Result<IsoFile<H>> {
+        panic!("TODO")
+    }
+}
+
+// Constructor
+impl<H: Read + Seek> IsoFs<H> {
+    /// Open an `IsoFs` stored in the given handle.
+    pub fn new(mut handle: H) -> Result<Self> {
+        use self::descriptors::VolumeDescriptor;
+
+        let mut block_size: Option<u16> = None;
+        let mut root: Option<Node> = None;
+
+        let mut descriptors: Vec<VolumeDescriptor> = Vec::new();
         let mut offset = 0x10;
-        let mut buff = [0; SECTOR_SIZE];
+        let mut buff = [0; self::constants::SECTOR_SIZE as usize];
         let mut terminated = false;
 
-        while let (false, Ok(ref bytes)) =
-            (terminated, Self::get_sector(&mut handle, offset, &mut buff))
-        {
-            let vd = VolumeDescriptor::parse(bytes)?;
-            offset += 1;
+        // Go to the 16th logical sector
+        handle.seek(::std::io::SeekFrom::Start(
+            offset * self::constants::SECTOR_SIZE,
+        ))?;
 
-            match vd {
-                VolumeDescriptor::Terminator(_) => terminated = true,
-                VolumeDescriptor::Primary(ref pvd) => {
-                    block_size = Some(pvd.block_size as usize);
-                    records.insert(PathBuf::from("/"), pvd.root.clone());
-                }
-                _ => (),
+        // Read all volume descriptors and extract data from the PVD
+        while let (false, Ok(vd)) = (
+            terminated,
+            handle
+                .read_exact(&mut buff)
+                .map_err(Error::from)
+                .and_then(|_| VolumeDescriptor::parse(&buff)),
+        ) {
+            offset += 1;
+            if let VolumeDescriptor::Terminator(_) = vd {
+                terminated = true
+            } else if let VolumeDescriptor::Primary(ref pvd) = vd {
+                block_size = Some(pvd.block_size);
+                root = Some(Node::create_root(pvd.root.clone()))
             }
 
             descriptors.push(vd);
         }
 
+        // Assert the loop did not break because of an error
         if !terminated {
-            bail!(::error::ErrorKind::NoSetTerminator)
+            bail!(ErrorKind::NoPrimaryVolumeDescriptor);
         }
 
         Ok(Self {
             handle: RefCell::new(handle),
-            descriptors,
-            records: RefCell::new(records),
             block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
+            root: root.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)
+                .map(RefCell::new)
+                .map(Rc::new)?,
         })
-    }
-
-    ///
-    pub fn read_dir<'a, P>(&'a self, path: P) -> Result<Vec<Record>>
-    where
-        P: AsRef<::std::path::Path>,
-    {
-        let ref record = self.get_record(path.as_ref())?;
-        Ok(record.children(self)?.collect())
-    }
-
-
-
-
-    /// Load a sector into the given buffer.
-    ///
-    /// Buffer must have a capacity of exactly `SECTOR_SIZE`.
-    fn get_sector<'a>(handle: &mut H, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
-        let offset = (block * SECTOR_SIZE as u32) as u64;
-        handle.seek(::std::io::SeekFrom::Start(offset))?;
-        handle.read_exact(buf)?;
-        Ok(buf)
-    }
-
-    /// Load a logical block into the given buffer.
-    ///
-    /// Buffer must have a capacity of exactly `self.block_size`.
-    fn get_block<'a>(&self, block: u32, buf: &'a mut [u8]) -> Result<&'a mut [u8]> {
-        let offset = (block * self.block_size as u32) as u64;
-        let mut handle = self.handle.borrow_mut();
-        handle.seek(::std::io::SeekFrom::Start(offset))?;
-        handle.read_exact(buf)?;
-        Ok(buf)
-    }
-
-    /// Get the record for the given path, or `Error::NotFound`.
-    fn get_record<'a>(
-        &'a self,
-        path: &::std::path::Path
-    ) -> Result<Rc<Record>> {
-
-        if let Some(record) = self.records.borrow().get(path) {
-            return Ok(record.clone());
-        }
-
-        if let Some(parent_path) = path.parent() {
-
-            let filename = path.file_name();
-            let ref parent = self.get_record(parent_path)?;
-
-            for child in parent.children(self)? {
-                self.records.borrow_mut().insert(parent_path.join(&child.name), Rc::new(child));
-            }
-
-            match self.records.borrow().get(path) {
-                Some(record) => Ok(record.clone()),
-                None => Err(Error::from_kind(ErrorKind::NotFound(path.to_path_buf())))
-            }
-
-        } else {
-            Ok(self.pvd().root.clone())
-        }
-    }
-
-    /// Get the Primary Volume Descriptor of this image.
-    pub fn pvd<'a>(&'a self) -> &'a PrimaryVolumeDescriptor {
-        self.descriptors
-            .iter()
-            .filter_map(|x| match x {
-                VolumeDescriptor::Primary(pvd) => Some(pvd),
-                _ => None,
-            })
-            .next()
-            .unwrap()
-    }
-
-
-
-    pub fn open_file<'a, P>(&'a mut self, path: P) -> Result<File<'a, H>>
-    where
-        P: AsRef<::std::path::Path>,
-    {
-        let record = self.get_record(path.as_ref())?;
-        Ok(File::new(
-            &mut self.handle,
-            record.extent * self.block_size as u32,
-            record.data_length,
-        ))
     }
 }
 
-
-
-
-
-
-
-
-impl IsoImage<::std::fs::File> {
-    /// Open an `IsoImage` located on the filesystem at the given path.
-    pub fn from_path<P>(path: P) -> Result<Self>
-    where
-        P: ::std::convert::AsRef<::std::path::Path>,
-    {
+// Constructor from file
+impl IsoFs<::std::fs::File> {
+    /// Open an `IsoFs` located on the filesystem at the given path.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         ::std::fs::File::open(path.as_ref())
             .map_err(Error::from)
             .and_then(Self::new)
     }
 }
 
-impl<B: AsRef<[u8]>> IsoImage<::std::io::Cursor<B>>
-{
-    /// Open an `IsoImage` containted in a buffer of bytes.
+// Constructor from byte buffer
+impl<B: AsRef<[u8]>> IsoFs<::std::io::Cursor<B>> {
+    /// Open an `IsoFs` contained in a buffer of bytes.
     pub fn from_buffer(buffer: B) -> Result<Self> {
         Self::new(::std::io::Cursor::new(buffer))
     }

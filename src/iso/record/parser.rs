@@ -69,7 +69,6 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
     let (_, length) = peek!(input, be_u8)?;
     let (rem, buf) = take!(input, length)?;
-    println!("{:?}", buf);
     do_parse!(buf,
         length:         be_u8                                                        >>
         ear_length:     be_u8                                                        >>
@@ -90,8 +89,8 @@ pub fn record(input: &[u8]) -> ::nom::IResult<&[u8], Record> {
                             ear_length,
                             data_length,
                             seq_number,
-                            hidden: flags.0,
-                            dir: flags.1
+                            is_hidden: flags.0,
+                            is_dir: flags.1
                         })
     ).map(|(_, r)| (rem, r))
 }
