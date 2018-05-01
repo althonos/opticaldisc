@@ -24,10 +24,10 @@ impl VolumeDescriptor {
 
         Ok(match bytes.first() {
             None => bail!(Incomplete::<&[u8]>(Size(SECTOR_SIZE as usize))),
-            Some(0x00) => Boot(BootRecord::parse(bytes)?),
-            Some(0x01) => Primary(PrimaryVolumeDescriptor::parse(bytes)?),
-            Some(0xFF) => Terminator(SetTerminator::parse(bytes)?),
-            Some(othr) => bail!(::error::ErrorKind::UnknownDescriptorType(*othr)),
+            Some(&0x00) => Boot(BootRecord::parse(bytes)?),
+            Some(&0x01) => Primary(PrimaryVolumeDescriptor::parse(bytes)?),
+            Some(&0xFF) => Terminator(SetTerminator::parse(bytes)?),
+            Some(&othr) => bail!(::error::ErrorKind::UnknownDescriptorType(othr)),
         })
     }
 }

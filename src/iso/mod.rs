@@ -29,12 +29,15 @@
 //! in the *root*:
 //!
 //! ```rust
-//! # extern crate opticaldisc;
 //! use opticaldisc::iso::Metadata;
 //!
 //! let path = "static/iso/alpine.level1.iso";
 //! let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
-//! let contents: Vec<Metadata> = iso.read_dir("/").unwrap().into_iter().collect();
+//! let contents: Vec<Metadata> = iso.read_dir("/")
+//!                                  .unwrap()
+//!                                  .into_iter()
+//!                                  .filter(|meta| meta.is_dir())
+//!                                  .collect();
 //! # assert!(!contents.is_empty())
 //! ```
 //!
@@ -207,8 +210,7 @@ impl<H: Read + Seek> IsoFs<H> {
 
         println!("{:?}", node.record);
 
-        IsoFile::new(&mut self.handle, start, node.record.data_length)
-            .map_err(Error::from)
+        IsoFile::new(&mut self.handle, start, node.record.data_length).map_err(Error::from)
     }
 }
 

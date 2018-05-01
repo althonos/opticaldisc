@@ -20,7 +20,6 @@ use super::IsoFs;
 pub struct Metadata(Rc<Node>);
 
 impl Metadata {
-
     /// Returns whether this metadata is for a directory.
     pub fn is_dir(&self) -> bool {
         self.0.as_ref().record.is_dir
@@ -75,12 +74,12 @@ impl Metadata {
     /// Do not use this function with an `IsoFs` this `Metadata` instance was
     /// not obtained from ! You'll likely receive a nonsensical result, but
     /// this could possibly cause the internal parser to panic.
-    pub fn read_dir<H: Seek + Read>(&self, iso: &mut IsoFs<H>) -> ::error::Result<ReadDir> {
+    pub fn read_dir<H: Seek + Read>(&self, iso: &mut IsoFs<H>) -> Result<ReadDir> {
         if self.is_dir() {
             self.0.load_children(&mut iso.handle)?;
             ReadDir::new(self.0.clone())
         } else {
-            Err(::error::Error::from_kind(::error::ErrorKind::DirectoryExpected))
+            Err(Error::from_kind(ErrorKind::DirectoryExpected))
         }
     }
 }

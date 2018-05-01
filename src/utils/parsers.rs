@@ -14,7 +14,7 @@ macro_rules! matching {
         use $crate::nom::{ErrorKind, Needed};
         match $i.get(0) {
             None => Err(Incomplete(Needed::Size(1))),
-            Some(x @ $pattern) => Ok((&$i[1..], *x)),
+            Some(x @ &$pattern) => Ok((&$i[1..], *x)),
             _ => Err(Error(Code($i, ErrorKind::Custom(0)))),
         }
     })
