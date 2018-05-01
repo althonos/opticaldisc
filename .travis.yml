@@ -8,8 +8,8 @@ cache: cargo
 #    - libssl-dev
 
 rust:
-  #- stable
-  #- beta
+  - stable
+  - beta
   - nightly
 
 env:
@@ -20,7 +20,7 @@ env:
   - SCCACHE_DIR="$HOME/.cargo/sccache"
 
 before_install:
-  - sh -x ci/install-cargo-make.sh
+  - sh ci/install-cargo-make.sh
   - cargo make ci-setup-flow
 
 script:
