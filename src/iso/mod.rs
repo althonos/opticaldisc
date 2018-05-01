@@ -185,9 +185,30 @@ impl<H: Read + Seek> IsoFs<H> {
         self.node(path.as_ref()).is_ok()
     }
 
-    /// Open the file located
-    pub fn open_file<P: AsRef<Path>>(&mut self, p: P) -> Result<IsoFile<H>> {
-        panic!("TODO")
+    /// Open the file located at the given path.
+    ///
+    /// The file can be kept open as long as you can keep a mutable reference
+    /// to the `IsoFs`. This avoids the handle by being modified by both the
+    /// file and the filesystem instances.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::io::Read;
+    /// # let path = std::path::Path::new("static/iso/alpine.level1.iso");
+    /// # let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
+    /// let mut content = String::new();
+    /// iso.open_file("/ETC/APK/ARCH").unwrap().read_to_string(&mut content);
+    /// assert_eq!(content, "x86_64\n");
+    /// ```
+    pub fn open_file<'a, P: AsRef<Path>>(&'a mut self, path: P) -> Result<IsoFile<'a, H>> {
+        let node = self.node(path.as_ref())?;
+        let start = node.record.extent * self.block_size as u32;
+
+        println!("{:?}", node.record);
+
+        IsoFile::new(&mut self.handle, start, node.record.data_length)
+            .map_err(Error::from)
     }
 }
 

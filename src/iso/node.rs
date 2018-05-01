@@ -105,9 +105,7 @@ impl Node {
                     break 'sector;
                 } else if record.name != "\0" && record.name != "\x01" {
                     let name = record.name.clone();
-                    let node = Rc::new(self.create_child(record));
-                    println!("ADDED {}", &name);
-                    contents.insert(name, node);
+                    contents.insert(name, Rc::new(self.create_child(record)));
                 }
             }
         }
