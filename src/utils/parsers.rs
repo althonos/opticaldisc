@@ -55,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(unreachable_pattern)]
+    #[allow(unreachable_patterns)]
     fn test_matching() {
         let buf1 = b"\x02";
         assert!(matching!(&buf1[..], _).is_ok());
