@@ -6,9 +6,9 @@ use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::error::Error;
-use crate::error::ErrorKind;
-use crate::error::Result;
+use super::super::error::Error;
+use super::super::error::ErrorKind;
+use super::super::error::Result;
 
 use super::record::Record;
 use super::constants::SECTOR_SIZE;

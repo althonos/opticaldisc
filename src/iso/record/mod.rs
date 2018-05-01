@@ -17,7 +17,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn parse(input: &[u8]) -> crate::error::Result<Self> {
+    pub fn parse(input: &[u8]) -> ::error::Result<Self> {
         Ok(parser::record(input)?.1)
     }
 }

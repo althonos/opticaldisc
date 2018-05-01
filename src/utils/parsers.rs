@@ -9,10 +9,13 @@ macro_rules! null_terminated (
 /// Parse an u8 only if it matches the given pattern.
 macro_rules! matching {
     ($i: expr, $pattern: pat) => ({
+        use $crate::nom::Err::{Incomplete, Error};
+        use $crate::nom::Context::Code;
+        use $crate::nom::{ErrorKind, Needed};
         match $i.get(0) {
-            None => Err(::nom::Err::Incomplete(::nom::Needed::Size(1))),
+            None => Err(Incomplete(Needed::Size(1))),
             Some(x @ $pattern) => Ok((&$i[1..], *x)),
-            _ => Err(::nom::Err::Error(::nom::Context::Code($i, ::nom::ErrorKind::Custom(0)))),
+            _ => Err(Error(Code($i, ErrorKind::Custom(0)))),
         }
     })
 }

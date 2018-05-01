@@ -1,5 +1,4 @@
 //! A crate to parse filesystems used on optical media storage.
-#![feature(crate_in_paths)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
 

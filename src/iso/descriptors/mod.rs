@@ -9,9 +9,6 @@ pub use self::primary::PrimaryVolumeDescriptor;
 use nom::Err::Incomplete;
 use nom::Needed::Size;
 
-use crate::error::Result;
-use crate::error::ErrorKind;
-
 use super::constants::SECTOR_SIZE;
 
 #[derive(Debug)]
@@ -22,7 +19,7 @@ pub enum VolumeDescriptor {
 }
 
 impl VolumeDescriptor {
-    pub fn parse(bytes: &[u8]) -> Result<Self> {
+    pub fn parse(bytes: &[u8]) -> ::error::Result<Self> {
         use self::VolumeDescriptor::*;
 
         Ok(match bytes.first() {
@@ -30,7 +27,7 @@ impl VolumeDescriptor {
             Some(0x00) => Boot(BootRecord::parse(bytes)?),
             Some(0x01) => Primary(PrimaryVolumeDescriptor::parse(bytes)?),
             Some(0xFF) => Terminator(SetTerminator::parse(bytes)?),
-            Some(othr) => bail!(ErrorKind::UnknownDescriptorType(*othr)),
+            Some(othr) => bail!(::error::ErrorKind::UnknownDescriptorType(*othr)),
         })
     }
 }
