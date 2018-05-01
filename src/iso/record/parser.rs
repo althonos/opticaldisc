@@ -34,16 +34,14 @@ named!(datetime(&[u8]) -> DateTime<FixedOffset>,
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub fn versioned_name(input: &[u8], is_dir: bool) -> ::nom::IResult<&[u8], (&str, Option<u8>)> {
-
     let version: Option<u8>;
     let name: &[u8];
-
     let (i1, size) = try_parse!(input, be_u8);
     let (i2, buff) = try_parse!(i1, take!(size));
     let len = size as usize;
 
     if let Some(sep) = memrchr(b';', buff) {
-        name = if buff[sep-1] == b'.' { &buff[..sep - 1] } else { &buff[..sep] };
+        name = if buff[sep - 1] == b'.' { &buff[..sep - 1] } else { &buff[..sep] };
         version = match btou(&buff[sep+1..]) {
             Ok(version_num) => Some(version_num),
             Err(_) => return Err(Failure(Context::Code(&buff[sep+1..], ::nom::ErrorKind::MapRes))),
@@ -57,7 +55,6 @@ pub fn versioned_name(input: &[u8], is_dir: bool) -> ::nom::IResult<&[u8], (&str
         Ok(name_str) => Ok((i2, (name_str, version))),
         Err(_) => Err(Failure(Context::Code(&buff[len-1..], ::nom::ErrorKind::MapRes))),
     }
-
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -86,6 +83,7 @@ named!(record_flags(&[u8]) -> (bool, bool, bool, bool, bool, bool),
 #[cfg_attr(rustfmt, rustfmt_skip)]
 named!(pub record(&[u8]) -> Record,
     do_parse!(
+                        not!(peek!(tag!("\0")))         >>
         length:         be_u8                           >>
         ear_length:     be_u8                           >>
         extent:         both_u32                        >>
@@ -119,14 +117,27 @@ mod tests {
     use chrono::Timelike;
 
     #[test]
+    fn test_filename() {
+        let buf = b"\x06APK.;1";
+        let (_, (name, v)) = super::versioned_name(buf, false).unwrap();
+        assert_eq!(v, Some(1));
+        assert_eq!(name, "APK");
+    }
+
+    #[test]
     fn test_record() {
         let buf = b"\"\0\x13\0\0\0\0\0\0\x13\0\x08\0\0\0\0\x08\0v\x04\x01\x05\x05\x17\0\x02\0\0\x01\0\0\x01\x01\0";
-        let dr = super::record(buf).unwrap();
+        let (_, dr) = super::record(buf).unwrap();
 
         let buf2 = b"`\x00\x13\x00\x00\x00\x00\x00\x00\x13\x00\x08\x00\x00\x00\x00\x08\x00v\x04\x01\x05\x05\x17\x00\x02\x00\x00\x01\x00\x00\x01\x01\x01PX$\x01\xedA\x00\x00\x00\x00A\xed\x01\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00TF\x1a\x01\x0ev\x04\x01\x05\x05\x17\x00v\x04\x01\x05\x05\x18\x00v\x04\x01\x05\x05\x17\x00";
-        let dr = super::record(&buf2[..]);
-        println!("{:?}", dr);
-        dr.unwrap();
+        let (_, dr) = super::record(&buf2[..]).unwrap();
+
+        let buf3 = b"\x28\x00\xf6\x00\x00\x00\x00\x00\x00\xf6\x88\x16\x03\x00\x00\x03\x16\x88v\x05\x01\x0f3\x1e\x08\x00\x00\x00\x01\x00\x00\x01\x06APK.;1\x00";
+        let (_, dr) = super::record(&buf3[..]).unwrap();
+        assert_eq!(dr.name, "APK");
+
+        let buf4 = b"\0\0\0\0\0";
+        assert!(super::record(&buf4[..]).is_err());
     }
 
     #[test]
