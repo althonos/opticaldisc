@@ -2,10 +2,22 @@
 name = "opticaldisc"
 version = "0.1.0"
 authors = ["Martin Larralde <martin.larralde@ens-cachan.fr>"]
+license = "MIT"
+description = "Read optical media filesystems with Rust"
+documentation = "https://docs.rs/opticaldisc"
+repository = "https://github.com/althonos/opticaldisc"
+readme = "README.md"
+keywords = ["iso9660", "cd", "parser", "iso"]
+categories = ["filesystem", "parser-implementations"]
 
 [dependencies]
-memchr = "^2.0"
-nom = "4.0.0-beta3"
-btoi = "^0.3"
-error-chain = { version = "^0.11", default-features = false }
-chrono = { version = "^0.4", default-features = false }
+memchr = "^2.0.0"
+nom = "^4.0.0-beta3"
+btoi = "^0.3.0"
+error-chain = { version = "^0.11.0", default-features = false }
+chrono = { version = "^0.4.0", default-features = false }
+
+[badges]
+travis-ci   = { repository = "althonos/opticaldisc" }
+codecov     = { repository = "althonos/opticaldisc" }
+maintenance = { status = "actively-developed" }
