@@ -44,6 +44,9 @@
 //! [`ISO-9660`]: https://en.wikipedia.org/wiki/ISO_9660
 //! [`nom`]: https://docs.rs/nom/
 //! [`IsoFs`]: struct.IsoFs.html
+//! [`&self`]: https://doc.rust-lang.org/1.8.0/book/references-and-borrowing.html#borrowing
+//! [`&mut self`]: https://doc.rust-lang.org/1.8.0/book/references-and-borrowing.html#mut-references
+//! [`RefCell`]: https://doc.rust-lang.org/beta/std/cell/index.html
 
 mod descriptors;
 mod file;
@@ -110,8 +113,10 @@ impl<H: Read + Seek> IsoFs<H> {
     ///
     /// # Errors
     ///
-    /// * [`NotFound`] when the resource could not be found
-    /// * [`DirectoryExpected`] when the resource is not a directory
+    /// * [`NotFound`](../error/enum.ErrorKind.html#variant.NotFound)
+    ///   when the resource could not be found
+    /// * [`DirectoryExpected`](../error/enum.ErrorKind.html#variant.DirectoryExpected)
+    ///   when the resource is not a directory
     ///
     /// # Example
     ///
@@ -136,7 +141,8 @@ impl<H: Read + Seek> IsoFs<H> {
     ///
     /// # Errors
     ///
-    /// * [`NotFound`] when the resource could not be found.
+    /// * [`NotFound`](../error/enum.ErrorKind.html#variant.NotFound)
+    ///   when the resource could not be found
     ///
     /// # Example
     ///

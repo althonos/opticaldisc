@@ -16,7 +16,7 @@ use super::IsoFs;
 ///
 /// Similar to [`std::fs::Metadata`].
 ///
-/// [`std::fs::Metadata`](https://doc.rust-lang.org/std/fs/struct.Metadata.html)
+/// [`std::fs::Metadata`]: https://doc.rust-lang.org/std/fs/struct.Metadata.html
 pub struct Metadata(Rc<Node>);
 
 impl Metadata {
