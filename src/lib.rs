@@ -10,7 +10,6 @@
 //! [![Changelog](https://img.shields.io/badge/keep%20a-changelog-8A0707.svg?maxAge=2678400&style=flat-square)](http://keepachangelog.com/)
 //! [![SayThanks](https://img.shields.io/badge/say-thanks!-1EAEDB.svg?maxAge=2678400&style=flat-square)](https://saythanks.io/to/althonos)
 
-
 #![allow(unused_variables)]
 #![allow(dead_code)]
 

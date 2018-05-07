@@ -9,7 +9,6 @@ use super::super::error::ErrorKind;
 use super::super::error::Result;
 
 use super::node::Node;
-use super::readdir::ReadDir;
 use super::IsoFs;
 
 /// Metadata information about an ISO-9600 filesystem resource.
@@ -56,7 +55,7 @@ impl Metadata {
     ///
     /// fn count<H: Seek + Read>(iso: &mut IsoFs<H>, meta: &Metadata) -> usize {
     ///     meta.read_dir(iso)
-    ///         .map(|rd| rd.into_iter()
+    ///         .map(|rd| rd.iter()
     ///                     .fold(1, |acc, child| acc + count(iso, &child)))
     ///         .unwrap_or(1)
     /// }
@@ -74,10 +73,14 @@ impl Metadata {
     /// Do not use this function with an `IsoFs` this `Metadata` instance was
     /// not obtained from ! You'll likely receive a nonsensical result, but
     /// this could possibly cause the internal parser to panic.
-    pub fn read_dir<H: Seek + Read>(&self, iso: &mut IsoFs<H>) -> Result<ReadDir> {
+    pub fn read_dir<H: Seek + Read>(&self, iso: &mut IsoFs<H>) -> Result<Vec<Self>> {
         if self.is_dir() {
-            self.0.load_children(&mut iso.handle)?;
-            ReadDir::new(self.0.clone())
+            let contents = self.0
+                .children(&mut iso.handle)?
+                .into_iter()
+                .map(Self::from)
+                .collect();
+            Ok(contents)
         } else {
             Err(Error::from_kind(ErrorKind::DirectoryExpected))
         }

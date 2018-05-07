@@ -45,14 +45,31 @@ impl Node {
     where
         H: Read + Seek,
     {
-        if !self.record.is_dir {
-            bail!(ErrorKind::DirectoryExpected)
+        if self.record.is_dir {
+            self.load_children(handle)?;
+            match self.contents.borrow().as_ref().unwrap().get(name) {
+                Some(rc) => Ok(rc.clone()),
+                None => Err(Error::from(ErrorKind::NotFound(self.path.join(name)))),
+            }
+        } else {
+            Err(Error::from_kind(ErrorKind::DirectoryExpected))
         }
+    }
+
+    ///
+    pub(in iso) fn children<H>(&self, handle: &mut H) -> Result<Vec<Rc<Self>>>
+    where
+        H: Read + Seek,
+    {
         self.load_children(handle)?;
-        match self.contents.borrow().as_ref().unwrap().get(name) {
-            Some(rc) => Ok(rc.clone()),
-            None => Err(Error::from(ErrorKind::NotFound(self.path.join(name)))),
-        }
+        let contents = self.contents
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .values()
+            .map(Clone::clone)
+            .collect();
+        Ok(contents)
     }
 
     /// Load the children directory records if they are still unknown.

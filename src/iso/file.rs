@@ -17,15 +17,8 @@ where
     H: ::std::io::Seek + ::std::io::Read,
 {
     pub fn new(handle: &'a mut H, start: u32, length: u32) -> Result<Self> {
-        match handle.seek(SeekFrom::Start(start as u64)) {
-            Ok(_) => Ok(Self {
-                handle,
-                start,
-                length,
-                pos: 0,
-            }),
-            Err(err) => Err(err),
-        }
+        handle.seek(SeekFrom::Start(start as u64))?;
+        Ok(Self { handle, start, length, pos: 0 })
     }
 }
 

@@ -52,7 +52,6 @@ mod descriptors;
 mod file;
 mod metadata;
 mod node;
-mod readdir;
 mod record;
 
 mod constants {
@@ -61,7 +60,6 @@ mod constants {
 }
 
 pub use self::file::IsoFile;
-pub use self::readdir::ReadDir;
 pub use self::metadata::Metadata;
 
 use std::io::Read;
@@ -124,17 +122,21 @@ impl<H: Read + Seek> IsoFs<H> {
     /// # use std::path::Path;
     /// # let path = Path::new("static/iso/alpine.level1.iso");
     /// # let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
-    /// for entry in iso.read_dir("ETC/APK").unwrap().into_iter() {
+    /// for entry in iso.read_dir("ETC/APK").unwrap().iter() {
     ///    if entry.name() == "ARCH" {
     ///        assert!(entry.is_file());
     ///        assert_eq!(entry.path(), Path::new("/ETC/APK/ARCH"));
     ///    }
     /// }
     /// ```
-    pub fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<ReadDir> {
+    pub fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> Result<Vec<Metadata>> {
         let node = self.node(path.as_ref())?;
-        node.as_ref().load_children(&mut self.handle)?;
-        ReadDir::new(node)
+        let contents = node.as_ref()
+            .children(&mut self.handle)?
+            .into_iter()
+            .map(Metadata::from)
+            .collect();
+        Ok(contents)
     }
 
     /// Get metadata about a resource located at the given path.
