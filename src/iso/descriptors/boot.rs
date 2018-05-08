@@ -40,10 +40,6 @@ mod parser {
 
     #[cfg(test)]
     mod tests {
-
-        use std::iter::FromIterator;
-        use super::BootRecord;
-
         #[test]
         fn test_boot_record() {
             let mut buf = Vec::new();

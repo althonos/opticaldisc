@@ -32,7 +32,6 @@ mod parser {
     #[cfg(test)]
     mod tests {
 
-        use std::iter::FromIterator;
         use super::SetTerminator;
 
         #[test]

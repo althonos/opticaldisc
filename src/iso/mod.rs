@@ -14,8 +14,8 @@
 //! # References
 //!
 //! Since it cannot be known whether a directory was parsed already or not, most
-//! of the methods of [`IsoFs`] will take a *mutable* reference [`&mut self`]
-//! instead of a constant reference [`&self`]. This makes use of the Rust rule
+//! of the methods of [`IsoFs`] will take a *mutable* reference ([`&mut self`])
+//! instead of a constant reference ([`&self`]). This makes use of the Rust rule
 //! enforcing only a single mutable reference to an object at a time, which is
 //! used here to protect the internal file-handle from concurrent access, all
 //! done at compile-time by the borrow checker.
@@ -33,12 +33,12 @@
 //!
 //! let path = "static/iso/alpine.level1.iso";
 //! let mut iso = opticaldisc::iso::IsoFs::from_path(path).unwrap();
-//! let contents: Vec<Metadata> = iso.read_dir("/")
-//!                                  .unwrap()
-//!                                  .into_iter()
-//!                                  .filter(|meta| meta.is_dir())
-//!                                  .collect();
-//! # assert!(!contents.is_empty())
+//! let contents = iso.read_dir("/").unwrap();
+//! let directories = contents
+//!     .into_iter()
+//!     .filter(|meta| meta.is_dir())
+//!     .collect::<Vec<Metadata>>();
+//! # assert!(!directories.is_empty())
 //! ```
 //!
 //! [`ISO-9660`]: https://en.wikipedia.org/wiki/ISO_9660
@@ -78,6 +78,78 @@ pub struct IsoFs<H: Read + Seek> {
     handle: H,
     root: Rc<Node>,
     block_size: u16,
+}
+
+// Constructor
+impl<H: Read + Seek> IsoFs<H> {
+    /// Open an `IsoFs` stored in the given handle.
+    pub fn new(mut handle: H) -> Result<Self> {
+        use self::descriptors::VolumeDescriptor;
+
+        let mut block_size: Option<u16> = None;
+        let mut root: Option<Node> = None;
+
+        let mut descriptors: Vec<VolumeDescriptor> = Vec::new();
+        let mut offset = 0x10;
+        let mut buff = [0; self::constants::SECTOR_SIZE as usize];
+        let mut terminated = false;
+
+        // Go to the 16th logical sector
+        handle.seek(::std::io::SeekFrom::Start(
+            offset * self::constants::SECTOR_SIZE,
+        ))?;
+
+        // Read all volume descriptors and extract data from the PVD
+        while let (false, Ok(vd)) = (
+            terminated,
+            handle
+                .read_exact(&mut buff)
+                .map_err(Error::from)
+                .and_then(|_| VolumeDescriptor::parse(&buff)),
+        ) {
+            offset += 1;
+            if let VolumeDescriptor::Terminator(_) = vd {
+                terminated = true
+            } else if let VolumeDescriptor::Primary(ref pvd) = vd {
+                block_size = Some(pvd.block_size);
+                root = Some(Node::create_root(pvd.root.clone()))
+            }
+
+            descriptors.push(vd);
+        }
+
+        // Assert the loop did not break because of an error
+        if !terminated {
+            bail!(ErrorKind::NoPrimaryVolumeDescriptor);
+        }
+
+        Ok(Self {
+            handle,
+            block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
+            root: match root {
+                Some(node) => Rc::new(node),
+                None => bail!(ErrorKind::NoPrimaryVolumeDescriptor),
+            },
+        })
+    }
+}
+
+// Constructor from file
+impl IsoFs<::std::fs::File> {
+    /// Open an `IsoFs` located on the filesystem at the given path.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        ::std::fs::File::open(path.as_ref())
+            .map_err(Error::from)
+            .and_then(Self::new)
+    }
+}
+
+// Constructor from byte buffer
+impl<B: AsRef<[u8]>> IsoFs<::std::io::Cursor<B>> {
+    /// Open an `IsoFs` contained in a buffer of bytes.
+    pub fn from_buffer(buffer: B) -> Result<Self> {
+        Self::new(::std::io::Cursor::new(buffer))
+    }
 }
 
 // Common methods
@@ -219,77 +291,5 @@ impl<H: Read + Seek> IsoFs<H> {
         println!("{:?}", node.record);
 
         IsoFile::new(&mut self.handle, start, node.record.data_length).map_err(Error::from)
-    }
-}
-
-// Constructor
-impl<H: Read + Seek> IsoFs<H> {
-    /// Open an `IsoFs` stored in the given handle.
-    pub fn new(mut handle: H) -> Result<Self> {
-        use self::descriptors::VolumeDescriptor;
-
-        let mut block_size: Option<u16> = None;
-        let mut root: Option<Node> = None;
-
-        let mut descriptors: Vec<VolumeDescriptor> = Vec::new();
-        let mut offset = 0x10;
-        let mut buff = [0; self::constants::SECTOR_SIZE as usize];
-        let mut terminated = false;
-
-        // Go to the 16th logical sector
-        handle.seek(::std::io::SeekFrom::Start(
-            offset * self::constants::SECTOR_SIZE,
-        ))?;
-
-        // Read all volume descriptors and extract data from the PVD
-        while let (false, Ok(vd)) = (
-            terminated,
-            handle
-                .read_exact(&mut buff)
-                .map_err(Error::from)
-                .and_then(|_| VolumeDescriptor::parse(&buff)),
-        ) {
-            offset += 1;
-            if let VolumeDescriptor::Terminator(_) = vd {
-                terminated = true
-            } else if let VolumeDescriptor::Primary(ref pvd) = vd {
-                block_size = Some(pvd.block_size);
-                root = Some(Node::create_root(pvd.root.clone()))
-            }
-
-            descriptors.push(vd);
-        }
-
-        // Assert the loop did not break because of an error
-        if !terminated {
-            bail!(ErrorKind::NoPrimaryVolumeDescriptor);
-        }
-
-        Ok(Self {
-            handle,
-            block_size: block_size.ok_or(ErrorKind::NoPrimaryVolumeDescriptor)?,
-            root: match root {
-                Some(node) => Rc::new(node),
-                None => bail!(ErrorKind::NoPrimaryVolumeDescriptor),
-            },
-        })
-    }
-}
-
-// Constructor from file
-impl IsoFs<::std::fs::File> {
-    /// Open an `IsoFs` located on the filesystem at the given path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        ::std::fs::File::open(path.as_ref())
-            .map_err(Error::from)
-            .and_then(Self::new)
-    }
-}
-
-// Constructor from byte buffer
-impl<B: AsRef<[u8]>> IsoFs<::std::io::Cursor<B>> {
-    /// Open an `IsoFs` contained in a buffer of bytes.
-    pub fn from_buffer(buffer: B) -> Result<Self> {
-        Self::new(::std::io::Cursor::new(buffer))
     }
 }
