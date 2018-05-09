@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::SeekFrom;
 use std::io::Result;
 
@@ -27,8 +28,8 @@ where
     H: ::std::io::Seek + ::std::io::Read,
 {
     fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
-        let size = self.length as u64 - self.pos;
-        let bytes_read = self.handle.read(&mut buffer[..size as usize])?;
+        let size = min(self.length as usize - self.pos as usize, buffer.len());
+        let bytes_read = self.handle.read(&mut buffer[..size ])?;
         self.pos += bytes_read as u64;
         Ok(bytes_read)
     }
