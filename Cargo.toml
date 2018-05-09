@@ -11,14 +11,14 @@ keywords = ["iso9660", "cd", "parser", "iso"]
 categories = ["filesystem", "parser-implementations"]
 
 [dependencies]
-memchr = "^2.0.0"
+memchr = "^2.0"
 nom = "^4.0.0-beta3"
-btoi = "^0.3.0"
-error-chain = { version = "^0.11.0", default-features = false }
-chrono = { version = "^0.4.0", default-features = false }
+btoi = "^0.3"
+error-chain = { version = "^0.11", default-features = false }
+chrono = { version = "^0.4", default-features = false }
 
 [dev-dependencies]
-lazy_static = "*"
+lazy_static = "^1.0"
 
 [badges]
 travis-ci   = { repository = "althonos/opticaldisc" }
