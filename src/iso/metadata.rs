@@ -8,8 +8,10 @@ use super::super::error::Error;
 use super::super::error::ErrorKind;
 use super::super::error::Result;
 
+use super::file::IsoFile;
 use super::node::Node;
 use super::IsoFs;
+
 
 /// Metadata information about an ISO-9600 filesystem resource.
 ///
@@ -85,6 +87,12 @@ impl Metadata {
             Err(Error::from_kind(ErrorKind::DirectoryExpected))
         }
     }
+
+    pub fn open_file<'a, H: Seek + Read + 'a>(&self, iso: &'a mut IsoFs<H>) -> Result<IsoFile<'a, H>> {
+        let start = self.0.record.extent * iso.block_size as u32;
+        IsoFile::new(&mut iso.handle, start, self.0.record.data_length).map_err(Error::from)
+    }
+
 }
 
 #[doc(hidden)]
